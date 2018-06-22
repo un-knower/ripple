@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package ink.baixin.ripple.core;
+
+message Record {
+  int64 timestamp = 1;
+  int32 app_id = 2;
+  string client_id = 3;
+  string session_id = 4;
+  string referer = 5;
+  int32 scene = 6;
+  string type = 7;
+  string sub_type = 8;
+  int64 parameter = 9;
+  string extra_parameter = 10;
+  string nickname = 11;
+  string avatar_url = 12;
+  int32 gender = 13;
+  string city = 14;
+  string province = 15;
+  string country = 16;
+  string language = 17;
+  string open_id = 18;
+  double longitude = 19;
+  double latitude = 20;
+  double location_accuracy = 21;
+}
+
+message User {
+  message Key {
+    int32 app_id = 1;
+    string open_id = 2;
+  }
+
+  message Profile {
+    string nickname = 1;
+    string avatar_url = 2;
+    string language = 3;
+    int32 gender = 4;
+  }
+
+  message GeoLocation {
+    string city = 1;
+    string province = 2;
+    string country = 3;
+  }
+
+  message GPSLocation {
+    double longitude = 4;
+    double latitude = 5;
+    double location_accuracy = 6;
+  }
+
+  Key key = 1;
+  Profile profile = 2;
+  GeoLocation geo_location = 3;
+  GPSLocation gps_location = 4;
+}
+
+message Event {
+  int64 timestamp = 1;
+  int32 dwell_time = 2;
+  string type = 3;
+  string sub_type = 4;
+  int64 parameter = 5;
+}
+
+message Session {
+  message Key {
+    int32 app_id = 1;
+    int64 timestamp = 2;
+    int64 session_id = 3;
+  }
+
+  message Aggregation {
+    int32 duration = 1;
+    int32 pageviews = 2;
+    int32 sharings = 3;
+    int32 likes = 4;
+  }
+
+  message Events {
+    repeated Event events = 1;
+  }
+
+  Key key = 1;
+  User.Key userKey = 2;
+  Aggregation aggregation = 3;
+  Events events = 4;
+}
