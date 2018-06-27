@@ -1,21 +1,28 @@
 package ink.baixin.ripple.core
 
+import java.util.concurrent.TimeUnit
+
 import com.amazonaws.services.dynamodbv2.document.Table
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
+import ink.baixin.ripple.core.documents.FactTable
 import state._
 
 trait ResourceResolver {
   protected def getStateDelegate: Option[State]
+
   protected def syncAndGetStateDelegate: Option[State]
+
   protected def getDynamoDBDelegate(name: String): Table
 
-  private val cache: LoadingCache[String, Table] = {
-    CacheBuilder.newBuilder()
+  private val cache: LoadingCache[String, FactTable] = {
+    CacheBuilder
+      .newBuilder()
       .maximumSize(100)
+      .expireAfterAccess(1, TimeUnit.HOURS)
       .build(
-        new CacheLoader[String, Table] {
-          override def load(name: String): Table = {
-            getDynamoDBDelegate(name)
+        new CacheLoader[String, FactTable] {
+          override def load(name: String): FactTable = {
+            new FactTable(getDynamoDBDelegate(name))
           }
         }
       )
@@ -44,7 +51,7 @@ trait ResourceResolver {
   }
 
   def getUserTable = {
-    val table = getStateDelegate match {
+    getStateDelegate match {
       case Some(state) => cache.get(s"${state.project}-${state.factTable}-users")
       case None =>
         syncAndGetStateDelegate match {

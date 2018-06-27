@@ -45,16 +45,9 @@ message User {
     string country = 3;
   }
 
-  message GPSLocation {
-    double longitude = 4;
-    double latitude = 5;
-    double location_accuracy = 6;
-  }
-
   Key key = 1;
   Profile profile = 2;
   GeoLocation geo_location = 3;
-  GPSLocation gps_location = 4;
 }
 
 message Event {
@@ -79,6 +72,12 @@ message Session {
     int32 likes = 4;
   }
 
+  message GPSLocation {
+    double longitude = 4;
+    double latitude = 5;
+    double location_accuracy = 6;
+  }
+
   message Events {
     repeated Event events = 1;
   }
@@ -86,5 +85,6 @@ message Session {
   Key key = 1;
   User.Key userKey = 2;
   Aggregation aggregation = 3;
-  Events events = 4;
+  GPSLocation gps_location = 4;
+  Events events = 5;
 }
