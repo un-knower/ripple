@@ -4,7 +4,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 import com.amazonaws.regions.Regions
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder
-import com.amazonaws.services.dynamodbv2.document.{DynamoDB, Item}
+import com.amazonaws.services.dynamodbv2.document.{DynamoDB, Item, Table}
 import com.amazonaws.services.dynamodbv2.document.spec.{GetItemSpec, PutItemSpec}
 import com.amazonaws.services.dynamodbv2.document.utils.ValueMap
 import com.amazonaws.services.dynamodbv2.model._
@@ -156,5 +156,13 @@ class StateProvider(project: String, config: Config) {
         logger.warn(s"event=mutate_empty_state project=$project")
         None
     }._2
+  }
+
+  lazy val resolver = new ResourceResolver {
+    override protected def syncAndGetStateDelegate: Option[State] = stateRef.get._2
+
+    override protected def getStateDelegate: Option[State] = syncState._2
+
+    override protected def getDynamoDBDelegate(name: String): Table = getDynamoDBDelegate(name)
   }
 }
