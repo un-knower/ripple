@@ -17,7 +17,7 @@ import state._
 import scala.util.{Failure, Random, Success, Try}
 
 class StateProvider(project: String, config: Config) {
-  private val logger = Logger(this.getClass.getName)
+  private val logger = Logger(this.getClass)
   private val stateRef = new AtomicReference[(Long, Option[State])](0, None)
   private val randomGen = new Random()
 
@@ -32,6 +32,8 @@ class StateProvider(project: String, config: Config) {
       .withTableName(tableName)
       .withKeySchema(new KeySchemaElement("project", KeyType.HASH))
       .withAttributeDefinitions(
+        // string type
+        new AttributeDefinition("project", ScalarAttributeType.S),
         // number type
         new AttributeDefinition("id", ScalarAttributeType.N),
         // byte type
@@ -141,6 +143,30 @@ class StateProvider(project: String, config: Config) {
         case _ => old
       }
     }
+  }
+
+  def ensureUserTable(tableName: String): Table = {
+    val tableSpec = new CreateTableRequest()
+      .withTableName(tableName)
+      .withKeySchema(
+        new KeySchemaElement("aid", KeyType.HASH),
+        new KeySchemaElement("oid", KeyType.RANGE)
+      )
+      .withAttributeDefinitions(
+        new AttributeDefinition("aid", ScalarAttributeType.N),
+        new AttributeDefinition("oid", ScalarAttributeType.S),
+        new AttributeDefinition("prf", ScalarAttributeType.B),
+        new AttributeDefinition("geo", ScalarAttributeType.B),
+        new AttributeDefinition("gps", ScalarAttributeType.B)
+      )
+
+    if (TableUtils.createTableIfNotExists(dynamodbClient, tableSpec)) {
+      logger.info(s"event=created_metadata_table name=$tableName")
+    }
+    logger.info(s"event=wait_metadata_active name=$tableName")
+    TableUtils.waitUntilActive(dynamodbClient, tableName, 300 * 1000, 5 * 1000)
+
+    new DynamoDB(dynamodbClient).getTable(tableName)
   }
 
   lazy val listener = new StateListener {

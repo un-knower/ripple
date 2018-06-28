@@ -4,7 +4,7 @@ import java.util.concurrent.TimeUnit
 
 import com.amazonaws.services.dynamodbv2.document.Table
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
-import ink.baixin.ripple.core.documents.FactTable
+import ink.baixin.ripple.core.documents.{FactTable, UserTable}
 import state._
 
 trait ResourceResolver {
@@ -21,15 +21,27 @@ trait ResourceResolver {
       .expireAfterAccess(1, TimeUnit.HOURS)
       .build(
         new CacheLoader[String, FactTable] {
-          override def load(name: String): FactTable = {
+          override def load(name: String): FactTable =
             new FactTable(getDynamoDBDelegate(name))
-          }
+        }
+      )
+  }
+
+  private val userTableCache: LoadingCache[String, UserTable] = {
+    CacheBuilder
+      .newBuilder()
+      .maximumSize(5)
+      .expireAfterAccess(1, TimeUnit.DAYS)
+      .build(
+        new CacheLoader[String, UserTable] {
+          override def load(name: String): UserTable =
+            new UserTable(getDynamoDBDelegate(name))
         }
       )
   }
 
   private def getSegmentTable(state: State, seg: State.Segment) =
-    cache.get(s"${state.project}-${state.factTable}-${seg.id}")
+    cache.get(getFactTableName(state, seg))
 
   def getFactTable(ts: Long) = {
     val table = getStateDelegate match {
@@ -51,13 +63,20 @@ trait ResourceResolver {
   }
 
   def getUserTable = {
-    getStateDelegate match {
-      case Some(state) => cache.get(s"${state.project}-${state.factTable}-users")
-      case None =>
-        syncAndGetStateDelegate match {
-          case Some(state) => cache.get(s"${state.project}-${state.factTable}-users")
-          case None => None
-        }
+    val table = getStateDelegate match {
+      case Some(state) => Some(cache.get(getUserTableName(state)))
+      case None => None
+    }
+    if (table.isDefined) table
+    else syncAndGetStateDelegate match {
+      case Some(state) => Some(cache.get(getUserTableName(state)))
+      case None => None
     }
   }
+
+  def getFactTableName(state: State, seg: State.Segment) =
+    s"${state.project}-${state.factTable}-${seg.id}"
+
+  def getUserTableName(state: State) =
+    s"${state.project}-${state.factTable}-user"
 }

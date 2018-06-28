@@ -5,7 +5,7 @@ import com.typesafe.scalalogging.Logger
 import state._
 
 trait StateListener {
-  private val logger = Logger(this.getClass.getName)
+  private val logger = Logger(this.getClass)
 
   private lazy val timelySyncTask = {
     val timer = new java.util.Timer()
