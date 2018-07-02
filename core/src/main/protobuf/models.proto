@@ -27,11 +27,6 @@ message Record {
 }
 
 message User {
-  message Key {
-    int32 app_id = 1;
-    string open_id = 2;
-  }
-
   message Profile {
     string nickname = 1;
     string avatar_url = 2;
@@ -45,9 +40,10 @@ message User {
     string country = 3;
   }
 
-  Key key = 1;
-  Profile profile = 2;
-  GeoLocation geo_location = 3;
+  int32 app_id = 1;
+  string open_id = 2;
+  Profile profile = 3;
+  GeoLocation geo_location = 4;
 }
 
 message Event {
@@ -59,12 +55,6 @@ message Event {
 }
 
 message Session {
-  message Key {
-    int32 app_id = 1;
-    int64 timestamp = 2;
-    int64 session_id = 3;
-  }
-
   message Aggregation {
     int32 duration = 1;
     int32 pageviews = 2;
@@ -73,18 +63,20 @@ message Session {
   }
 
   message GPSLocation {
-    double longitude = 4;
-    double latitude = 5;
-    double location_accuracy = 6;
+    double longitude = 1;
+    double latitude = 2;
+    double location_accuracy = 3;
   }
 
   message Events {
     repeated Event events = 1;
   }
 
-  Key key = 1;
-  User.Key userKey = 2;
-  Aggregation aggregation = 3;
-  GPSLocation gps_location = 4;
-  Events events = 5;
+  int32 app_id = 1;
+  int64 timestamp = 2;
+  int64 session_id = 3;
+  string open_id = 4;
+  Aggregation aggregation = 5;
+  GPSLocation gps_location = 6;
+  Events events = 7;
 }

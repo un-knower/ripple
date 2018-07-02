@@ -2,12 +2,14 @@ package ink.baixin.ripple.core.documents
 
 import com.amazonaws.services.dynamodbv2.document.{Item, QueryFilter, RangeKeyCondition, Table}
 import com.amazonaws.services.dynamodbv2.document.spec.{GetItemSpec, QuerySpec}
+import com.typesafe.scalalogging.Logger
 import ink.baixin.ripple.core.models._
 
 import scala.util.{Failure, Success, Try}
 
 class UserTable(private val table: Table) {
-  private def getUserKey(appId: Int, openId: String) = User.Key(appId, openId)
+  private val logger = Logger(this.getClass)
+  val allAttributes = Seq("prf", "geo")
 
   private def safeQuery(spec: QuerySpec) =
     Try(table.query(spec).iterator) match {
@@ -20,114 +22,64 @@ class UserTable(private val table: Table) {
       case Failure(e) => Seq[Item]().iterator
     }
 
-  def getUser(appId: Int, openId: String) = Try {
+  private def buildUser(pk: Int, openId: String, attrs: Seq[String], item: Item) =
+    attrs.foldLeft(
+      User().withAppId(pk).withOpenId(openId)
+    ) {
+      case (u, "prf") if item.hasAttribute("prf") =>
+        u.withProfile(User.Profile.parseFrom(item.getBinary("prf")))
+      case (u, "geo") if item.hasAttribute("geo") =>
+        u.withGeoLocation(User.GeoLocation.parseFrom(item.getBinary("geo")))
+      case (u, _) => u
+    }
+
+  def getUser(appId: Int, openId: String, attrs: Seq[String] = allAttributes) = Try {
+    logger.debug(s"event=get_user pk=$appId openid=$openId")
     val spec = new GetItemSpec()
       .withPrimaryKey("aid", appId, "oid", openId)
-      .withAttributesToGet("prf", "geo")
+      .withAttributesToGet(attrs: _*)
     val res = table.getItem(spec)
-    User(
-      Some(User.Key(appId, openId)),
-      Some(User.Profile.parseFrom(res.getBinary("prf"))),
-      if (res.hasAttribute("geo")) Some(User.GeoLocation.parseFrom(res.getBinary("geo"))) else None
-    )
+    buildUser(appId, openId, attrs, res)
   }
 
   def putUser(appId: Int,
               openId: String,
               profile: User.Profile,
-              geo: Option[User.GeoLocation]) = {
-    val item = new Item()
+              geoLocation: User.GeoLocation) = Try {
+    logger.debug(s"event=put_user pk=$appId openid=$openId")
+    val keyItem = new Item()
       .withPrimaryKey("aid", appId, "oid", openId)
-      .withBinary("prf", profile.toByteArray)
 
-    geo match {
-      case Some(g) => table.putItem(item.withBinary("geo", g.toByteArray))
-      case None => table.putItem(item)
+    val item = Seq(
+      ("prf", profile.toByteArray),
+      ("geo", geoLocation.toByteArray)
+    ).foldLeft(keyItem) {
+      case (it, (attr, value)) if !value.isEmpty => it.withBinary(attr, value)
+      case (it, _) => it
     }
+    table.putItem(item)
   }
 
-  def queryUsers(appId: Int) = {
+  def queryUsers(appId: Int, attrs: Seq[String] = allAttributes) = {
+    logger.debug(s"event=query_users pk=$appId attrs=$attrs")
     val spec = new QuerySpec()
       .withHashKey("aid", appId)
-      .withAttributesToGet("oid", "prf", "geo")
+      .withAttributesToGet((attrs :+ "oid"): _*)
     safeQuery(spec).map { item =>
-      User(
-        Some(User.Key(appId, item.getString("oid"))),
-        Some(User.Profile.parseFrom(item.getBinary("prf"))),
-        if (item.hasAttribute("geo")) Some(User.GeoLocation.parseFrom(item.getBinary("geo"))) else None
-      )
+      buildUser(appId, item.getString("oid"), attrs, item)
     }
   }
 
-  def queryUsers(appId: Int, openIds: Set[String]) = {
-    openIds.toSeq.sorted.iterator.sliding(100, 100).map { oids =>
-      val spec = new QuerySpec()
-        .withHashKey("aid", appId)
-        .withRangeKeyCondition(new RangeKeyCondition("oid").between(oids.head, oids.last))
-        .withQueryFilters(new QueryFilter("oid").in(oids: _*))
-        .withAttributesToGet("oids", "prf", "geo")
-
-      safeQuery(spec).map { item =>
-        User(
-          Some(User.Key(appId, item.getString("oid"))),
-          Some(User.Profile.parseFrom(item.getBinary("prf"))),
-          if (item.hasAttribute("geo")) Some(User.GeoLocation.parseFrom(item.getBinary("geo"))) else None
-        )
-      }
-    }
-  }
-
-  def queryUserProfiles(appId: Int) = {
+  def queryUsersWithOpenIds(appId: Int, openIds: Set[String], attrs: Seq[String] = allAttributes) = {
+    logger.debug(s"event=query_users_with_openids pk=$appId openids=$openIds attrs=$attrs")
     val spec = new QuerySpec()
       .withHashKey("aid", appId)
-      .withAttributesToGet("oid", "prf")
+      .withRangeKeyCondition(new RangeKeyCondition("oid").between(openIds.min, openIds.max))
+      .withAttributesToGet((attrs :+ "oid"): _*)
 
-    safeQuery(spec).map { item =>
-      (User.Key(appId, item.getString("oid")), User.Profile.parseFrom(item.getBinary("prf")))
-    }
-  }
-
-  def queryUserProfiles(appId: Int, openIds: Set[String]) = {
-    openIds.toSeq.sorted.iterator.sliding(100, 100).map { oids =>
-      val spec = new QuerySpec()
-        .withHashKey("aid", appId)
-        .withRangeKeyCondition(new RangeKeyCondition("oid").between(oids.head, oids.last))
-        .withQueryFilters(new QueryFilter("oid").in(oids: _*))
-        .withAttributesToGet("oids", "prf")
-
-      safeQuery(spec).map { item =>
-        (User.Key(appId, item.getString("oid")), User.Profile.parseFrom(item.getBinary("prf")))
-      }
-    }
-  }
-
-  def queryUserGeoLocation(appId: Int) = {
-    val spec = new QuerySpec()
-      .withHashKey("aid", appId)
-      .withAttributesToGet("oid", "geo")
-
-    safeQuery(spec).map { item =>
-      if (item.hasAttribute("geo"))
-        Some(User.Key(appId, item.getString("oid")), User.GeoLocation.parseFrom(item.getBinary("geo")))
-      else
-        None
-    }
-
-    def queryUserGeoLocation(appId: Int, openIds: Set[String]) = {
-      openIds.toSeq.sorted.iterator.sliding(100, 100).map { oids =>
-        val spec = new QuerySpec()
-          .withHashKey("aid", appId)
-          .withRangeKeyCondition(new RangeKeyCondition("oid").between(oids.head, oids.last))
-          .withQueryFilters(new QueryFilter("oid").in(oids: _*))
-          .withAttributesToGet("oids", "geo")
-
-        safeQuery(spec).map { item =>
-          if (item.hasAttribute("geo"))
-            Some(User.Key(appId, item.getString("oid")), User.GeoLocation.parseFrom(item.getBinary("geo")))
-          else
-            None
-        }
-      }
+    safeQuery(spec).collect {
+      case item if openIds.contains(item.getString("oid")) =>
+        buildUser(appId, item.getString("oid"), attrs, item)
     }
   }
 }

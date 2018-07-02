@@ -40,12 +40,6 @@ class FactTableSpec extends FlatSpec {
     Session.GPSLocation(i / 7.0, i / 9/0, i / 21.0)
   }
 
-  private val sessions = for (i <- 0 until 1000) yield {
-    Session()
-      .withKey(Session.Key(i % 10, 0, i))
-      .withEvents(Session.Events(events(i)))
-  }
-
   it should "put sessions successfully" in {
     for ((evs, sid) <- events.zipWithIndex) {
       val res = table.putSession(
@@ -64,11 +58,10 @@ class FactTableSpec extends FlatSpec {
     for ((evs, sid) <- events.zipWithIndex) {
       val res = table.getSession(sid % 10, evs.head.timestamp, sid)
       val session = res.get
-      assert(session.getKey.appId == sid % 10)
-      assert(session.getKey.timestamp == evs.head.timestamp)
-      assert(session.getKey.sessionId == sid)
-      assert(session.getUserKey.appId == sid % 10)
-      assert(session.getUserKey.openId == s"openid-${(sid + 3) % 10}")
+      assert(session.appId == sid % 10)
+      assert(session.timestamp == evs.head.timestamp)
+      assert(session.sessionId == sid)
+      assert(session.openId == s"openid-${sid % 13}")
 
       val gps = gpsLocations(sid % 100)
       if (gps.toByteArray.isEmpty) {
@@ -100,9 +93,9 @@ class FactTableSpec extends FlatSpec {
 
         assert(res.size >= sub.size / 10)
         res.foreach { session =>
-          assert(session.getKey.appId == appId)
-          assert(s <= session.getKey.timestamp && session.getKey.timestamp <= e)
-          assert(session.userKey.isEmpty)
+          assert(session.appId == appId)
+          assert(s <= session.timestamp && session.timestamp <= e)
+          assert(session.openId.isEmpty)
           assert(session.aggregation.isEmpty)
           assert(session.gpsLocation.isEmpty)
           assert(session.events.isEmpty)
@@ -119,8 +112,8 @@ class FactTableSpec extends FlatSpec {
           val res = table.querySessionsWithOpenIds(appId, 0, Long.MaxValue, idset, Seq("oid")).toSeq
           assert(res.size > 0)
           res.foreach { session =>
-            assert(session.getUserKey.appId == appId)
-            assert(idset.contains(session.getUserKey.openId))
+            assert(session.appId == appId)
+            assert(idset.contains(session.openId))
             assert(session.aggregation.isEmpty)
             assert(session.gpsLocation.isEmpty)
             assert(session.events.isEmpty)

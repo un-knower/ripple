@@ -8,6 +8,7 @@ import com.typesafe.scalalogging.Logger
 import ink.baixin.ripple.core.models._
 import scala.util.{Failure, Success, Try}
 
+
 class FactTable(private val table: Table) {
   private val logger = Logger(this.getClass)
   val allAttributes = Seq("oid", "agg", "evs", "gps")
@@ -19,11 +20,11 @@ class FactTable(private val table: Table) {
     bf.array
   }
 
-  private def getSessionKey(appId: Int, sid: Array[Byte]) = {
+  private def parseSessionKey(sid: Array[Byte]) = {
     val bf = ByteBuffer.wrap(sid)
     val timestamp = bf.getLong
     val sessionId = bf.getLong
-    Session.Key(appId, timestamp, sessionId)
+    (timestamp, sessionId)
   }
 
   private def safeQuery(spec: QuerySpec) =
@@ -48,6 +49,7 @@ class FactTable(private val table: Table) {
     // check parameters
     assert(!openId.isEmpty)
     assert(!events.isEmpty)
+    logger.debug(s"event=put_session pk=$aid sid=$sid openid=$openId")
 
     val sorted = events.sortBy(_.timestamp)
     val uis = sorted.filter(_.`type` == "ui")
@@ -70,8 +72,6 @@ class FactTable(private val table: Table) {
     )
 
     val sk = getSortKey(ts, sid)
-    logger.debug(s"event=putting_item pk=$aid s=$sk oid=$openId")
-
     val evs = Session.Events(merged)
     val keyItem = new Item()
       .withPrimaryKey("aid", aid, "sid", sk)
@@ -88,10 +88,12 @@ class FactTable(private val table: Table) {
     table.putItem(item)
   }
 
-  private def buildSession(key: Session.Key, attrs: Seq[String], item: Item) =
-    attrs.foldLeft(Session().withKey(key)) {
+  private def buildSession(pk: Int, ts: Long, sid: Long, attrs: Seq[String], item: Item) =
+    attrs.foldLeft(
+      Session().withAppId(pk).withTimestamp(ts).withSessionId(sid)
+    ) {
       case (s, "oid") if item.hasAttribute("oid") =>
-        s.withUserKey(User.Key(key.appId, item.getString("oid")))
+        s.withOpenId(item.getString("oid"))
       case (s, "agg") if item.hasAttribute("agg") =>
         s.withAggregation(Session.Aggregation.parseFrom(item.getBinary("agg")))
       case (s, "gps") if item.hasAttribute("pgs") =>
@@ -103,13 +105,13 @@ class FactTable(private val table: Table) {
 
   def getSession(appId: Int, ts: Long, sid: Long, attrs: Seq[String] = allAttributes) =
     Try {
-      logger.debug(s"event=get_item pk=$appId ts=$ts sid=$sid attrs=$attrs")
+      logger.debug(s"event=get_session pk=$appId ts=$ts sid=$sid attrs=$attrs")
       val pk = appId
       val sk = getSortKey(ts, sid)
       val spec = new GetItemSpec()
         .withPrimaryKey("aid", pk, "sid", sk)
         .withAttributesToGet(attrs: _*)
-      buildSession(Session.Key(appId, ts, sid), attrs, table.getItem(spec))
+      buildSession(appId, ts, sid, attrs, table.getItem(spec))
     }
 
   def querySessions(appId: Int, start_ts: Long, end_ts: Long, attrs: Seq[String] = allAttributes) = {
@@ -124,7 +126,8 @@ class FactTable(private val table: Table) {
       .withAttributesToGet((attrs :+ "sid"): _*)
 
     safeQuery(spec).map { item =>
-      buildSession(getSessionKey(pk, item.getBinary("sid")), attrs, item)
+      val (ts, sid) = parseSessionKey(item.getBinary("sid"))
+      buildSession(pk, ts, sid, attrs, item)
     }
   }
 
@@ -148,7 +151,8 @@ class FactTable(private val table: Table) {
         .withAttributesToGet((attrs :+ "sid"): _*)
 
       safeQuery(spec).map { item =>
-        buildSession(getSessionKey(pk, item.getBinary("sid")), attrs, item)
+        val (ts, sid) = parseSessionKey(item.getBinary("sid"))
+        buildSession(pk, ts, sid, attrs, item)
       }
     }
   }

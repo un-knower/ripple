@@ -13,7 +13,7 @@ trait ResourceResolver {
   protected def getUserTableDelegate(name: String): Table
   protected def getFactTableDelegate(name: String): Table
 
-  private val cache: LoadingCache[String, FactTable] = {
+  private val factTableCache: LoadingCache[String, FactTable] = {
     CacheBuilder
       .newBuilder()
       .maximumSize(100)
@@ -40,7 +40,7 @@ trait ResourceResolver {
   }
 
   private def getSegmentTable(state: State, seg: State.Segment) =
-    cache.get(getFactTableName(state, seg))
+    factTableCache.get(getFactTableName(state, seg))
 
   def getFactTable(ts: Long) = {
     val table = getStateDelegate match {
@@ -63,12 +63,12 @@ trait ResourceResolver {
 
   def getUserTable = {
     val table = getStateDelegate match {
-      case Some(state) => Some(cache.get(getUserTableName(state)))
+      case Some(state) => Some(userTableCache.get(getUserTableName(state)))
       case None => None
     }
     if (table.isDefined) table
     else syncAndGetStateDelegate match {
-      case Some(state) => Some(cache.get(getUserTableName(state)))
+      case Some(state) => Some(userTableCache.get(getUserTableName(state)))
       case None => None
     }
   }
