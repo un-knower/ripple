@@ -9,6 +9,11 @@ lazy val core = (project in file("."))
       "joda-time" % "joda-time" % jodaVersion,
       "com.google.guava" % "guava" % "25.0-jre",
       "com.amazonaws" % "aws-java-sdk-dynamodb" % "1.11.330",
+
+      // logging dependencies are only for testing under sub project
+      "org.apache.logging.log4j" % "log4j-slf4j-impl" % "2.11.0" % Test,
+      "org.apache.logging.log4j" % "log4j-core" % "2.11.0" % Test,
+      "org.apache.logging.log4j" % "log4j-api" % "2.11.0" % Test,
       "org.scalatest" %% "scalatest" % "3.0.5" % Test
     ),
     PB.targets in Compile := Seq(

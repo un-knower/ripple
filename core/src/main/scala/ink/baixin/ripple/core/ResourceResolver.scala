@@ -9,10 +9,9 @@ import state._
 
 trait ResourceResolver {
   protected def getStateDelegate: Option[State]
-
   protected def syncAndGetStateDelegate: Option[State]
-
-  protected def getDynamoDBDelegate(name: String): Table
+  protected def getUserTableDelegate(name: String): Table
+  protected def getFactTableDelegate(name: String): Table
 
   private val cache: LoadingCache[String, FactTable] = {
     CacheBuilder
@@ -22,7 +21,7 @@ trait ResourceResolver {
       .build(
         new CacheLoader[String, FactTable] {
           override def load(name: String): FactTable =
-            new FactTable(getDynamoDBDelegate(name))
+            new FactTable(getFactTableDelegate(name))
         }
       )
   }
@@ -35,7 +34,7 @@ trait ResourceResolver {
       .build(
         new CacheLoader[String, UserTable] {
           override def load(name: String): UserTable =
-            new UserTable(getDynamoDBDelegate(name))
+            new UserTable(getUserTableDelegate(name))
         }
       )
   }
@@ -47,7 +46,7 @@ trait ResourceResolver {
     val table = getStateDelegate match {
       case Some(state) =>
         state.segments
-          .find(s => s.startTime <= ts && ts < s.endTime)
+          .find(s => s.startTime <= ts && ts < s.endTime && s.provisioned)
           .map(s => getSegmentTable(state, s))
       case None => None
     }
@@ -56,7 +55,7 @@ trait ResourceResolver {
     else syncAndGetStateDelegate match {
       case Some(state) =>
         state.segments
-          .find(s => s.startTime <= ts && ts < s.endTime)
+          .find(s => s.startTime <= ts && ts < s.endTime && s.provisioned)
           .map(s => getSegmentTable(state, s))
       case None => None
     }
@@ -78,5 +77,5 @@ trait ResourceResolver {
     s"${state.project}-${state.factTable}-${seg.id}"
 
   def getUserTableName(state: State) =
-    s"${state.project}-${state.factTable}-user"
+    s"${state.project}-${state.factTable}-users"
 }

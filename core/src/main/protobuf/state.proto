@@ -4,9 +4,10 @@ package ink.baixin.ripple.core;
 
 message State {
   string project = 1;
-  string fact_table = 2;
-  string resource_bucket = 3;
-  int64 reserved_id = 4;
+  string timezone = 2;
+  string fact_table = 3;
+  string resource_bucket = 4;
+  int64 reserved_id = 5;
 
   message Segment {
     int64 id = 1;
@@ -16,5 +17,5 @@ message State {
     int64 end_time = 5;
   }
 
-  repeated Segment segments = 5;
+  repeated Segment segments = 6;
 }

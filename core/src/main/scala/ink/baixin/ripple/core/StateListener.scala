@@ -6,6 +6,7 @@ import state._
 
 trait StateListener {
   private val logger = Logger(this.getClass)
+  protected val listenInterval: Int = 30 * 1000
 
   private lazy val timelySyncTask = {
     val timer = new java.util.Timer()
@@ -15,7 +16,7 @@ trait StateListener {
       }
     }
     // sync state every 30 seconds
-    timer.schedule(task, 0, 30000)
+    timer.schedule(task, 0, listenInterval)
     task
   }
 

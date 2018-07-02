@@ -1,6 +1,6 @@
 package ink.baixin.ripple.core
 
-import org.joda.time.DateTime
+import org.joda.time.{DateTime, DateTimeZone}
 import state._
 
 trait StateMutator {
@@ -14,19 +14,52 @@ trait StateMutator {
     case _ => Seq()
   }
 
-  def addSegments(ids: Seq[Long]): Option[State] = updateDelegate {
-    old =>
-      val s = new DateTime(old.segments.last.startTime)
-      val segs = ids.zipWithIndex.collect {
-        case (id, i) => State.Segment(id, false, false,
-          s.plusDays(i * 3).getMillis,
-          s.plusDays(i * 3 + 3).getMillis)
-      }
-      old.withReservedId(old.reservedId + 1).addAllSegments(segs)
+  def ensureSegments = updateDelegate { old =>
+    // make sure we'll have enough segments in the future
+    val today = DateTime.now(DateTimeZone.forID(old.timezone)).withTimeAtStartOfDay
+    val safeTime = today.plusDays(2).getMillis
+    var newState = old
+    if (newState.segments.isEmpty) {
+      // at first we make sure this is a initial segment
+      newState = newState
+        .withReservedId(newState.reservedId + 1)
+        .addSegments(
+          State.Segment(
+            newState.reservedId, false, false,
+            today.minusDays(2).getMillis, today.plusDays(1).getMillis
+          )
+        )
+    }
+    while (newState.segments.last.endTime <= safeTime) {
+      newState = newState
+        .withReservedId(newState.reservedId + 1)
+        .addSegments(
+          State.Segment(
+            newState.reservedId, false, false,
+            newState.segments.last.endTime,
+            new DateTime(newState.segments.last.endTime).plusDays(3).getMillis
+          )
+        )
+    }
+    newState
   }
 
-  def addSegments(n: Int): Option[State] = {
-    addSegments(reserveIds(n))
+  def addSegments(n: Int): Option[State] = updateDelegate { old =>
+    val s = if (old.segments.isEmpty) {
+      DateTime.now(DateTimeZone.forID(old.timezone)).withTimeAtStartOfDay
+    } else {
+      new DateTime(old.segments.last.endTime)
+    }
+    old
+      .withReservedId(old.reservedId + n)
+      .addAllSegments(
+        for (i <- 0 until n) yield {
+          State.Segment(
+            old.reservedId + i, false, false,
+            s.plusDays(i * 3).getMillis, s.plusDays(i * 3 + 3).getMillis
+          )
+        }
+      )
   }
 
   def removeSegments(ids: Set[Long]) = updateDelegate {
