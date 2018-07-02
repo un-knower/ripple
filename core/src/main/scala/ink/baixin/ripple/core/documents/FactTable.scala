@@ -4,21 +4,19 @@ import java.nio.ByteBuffer
 
 import com.amazonaws.services.dynamodbv2.document._
 import com.amazonaws.services.dynamodbv2.document.spec.{GetItemSpec, QuerySpec}
+import com.typesafe.scalalogging.Logger
 import ink.baixin.ripple.core.models._
-
 import scala.util.{Failure, Success, Try}
 
-
 class FactTable(private val table: Table) {
+  private val logger = Logger(this.getClass)
+  val allAttributes = Seq("oid", "agg", "evs", "gps")
 
-  // TODO: why use sessionId?
   private def getSortKey(timestamp: Long, sessionId: Long) = {
     val bf = ByteBuffer.allocate(16)
     bf.putLong(timestamp)
     bf.putLong(sessionId)
-    val sk = Array[Byte](8)
-    bf.get(sk)
-    sk
+    bf.array
   }
 
   private def getSessionKey(appId: Int, sid: Array[Byte]) = {
@@ -37,256 +35,120 @@ class FactTable(private val table: Table) {
           override def next() = iter.next
         }
       case Failure(e) =>
+        logger.error(s"event=safe_query error=$e")
         Seq[Item]().iterator
     }
 
-  def putSession(primaryKey: Int,
-                 sortKey: Array[Byte],
+  def putSession(aid: Int,
+                 ts: Long,
+                 sid: Long,
                  openId: String,
-                 agg: Session.Aggregation,
-                 events: Session.Events) = Try {
-    val item = new Item()
-      .withPrimaryKey("aid", primaryKey, "sid", sortKey)
-      .withString("oid", openId)
-      .withBinary("agg", agg.toByteArray)
-      .withBinary("evs", events.toByteArray)
-    table.putItem(item)
-  }
-
-  def putSession(primaryKey: Int,
-                 sortKey: Array[Byte],
-                 openId: String,
-                 agg: Session.Aggregation,
                  gps: Session.GPSLocation,
-                 events: Session.Events) = Try {
-    val item = new Item()
-      .withPrimaryKey("aid", primaryKey, "sid", sortKey)
+                 events: Seq[Event]) = Try {
+    // check parameters
+    assert(!openId.isEmpty)
+    assert(!events.isEmpty)
+
+    val sorted = events.sortBy(_.timestamp)
+    val uis = sorted.filter(_.`type` == "ui")
+    val pvs = sorted.foldLeft(Seq[Event]()) { (evs, e) =>
+      val prev = if (!evs.isEmpty) {
+        evs.updated(
+          evs.size - 1,
+          evs.last.withDwellTime((e.timestamp - evs.last.timestamp).toInt / 1000)
+        )
+      } else evs
+
+      if (e.`type` == "pv") prev :+ e else prev
+    }
+    val merged = (uis ++ pvs).sortBy(_.timestamp)
+    val agg = Session.Aggregation(
+      duration = (sorted.last.timestamp - sorted.head.timestamp).toInt / 1000,
+      pageviews = merged.count(_.`type` == "pv"),
+      sharings = merged.count(e => e.`type` == "ui" && e.subType.toLowerCase.startsWith("share")),
+      likes = merged.count(e => e.`type` == "ui" && e.subType.toLowerCase.startsWith("like"))
+    )
+
+    val sk = getSortKey(ts, sid)
+    logger.debug(s"event=putting_item pk=$aid s=$sk oid=$openId")
+
+    val evs = Session.Events(merged)
+    val keyItem = new Item()
+      .withPrimaryKey("aid", aid, "sid", sk)
       .withString("oid", openId)
-      .withBinary("agg", agg.toByteArray)
-      .withBinary("gps", gps.toByteArray)
-      .withBinary("evs", events.toByteArray)
+
+    val item = Seq(
+      ("agg", agg.toByteArray),
+      ("gps", gps.toByteArray),
+      ("evs", evs.toByteArray)
+    ).foldLeft(keyItem) {
+      case (it, (attr, value)) if !value.isEmpty => it.withBinary(attr, value)
+      case (it, _) => it
+    }
     table.putItem(item)
   }
 
-  def putSession(session: Session) {
-    val key = session.getKey
-    val pk = key.appId
-    val sk = getSortKey(key.timestamp, key.sessionId)
-    if (session.gpsLocation.isEmpty) {
-      putSession(pk, sk, session.getUserKey.openId, session.getAggregation, session.getEvents)
-    } else {
-      putSession(pk, sk, session.getUserKey.openId, session.getAggregation, session.getGpsLocation, session.getEvents)
+  private def buildSession(key: Session.Key, attrs: Seq[String], item: Item) =
+    attrs.foldLeft(Session().withKey(key)) {
+      case (s, "oid") if item.hasAttribute("oid") =>
+        s.withUserKey(User.Key(key.appId, item.getString("oid")))
+      case (s, "agg") if item.hasAttribute("agg") =>
+        s.withAggregation(Session.Aggregation.parseFrom(item.getBinary("agg")))
+      case (s, "gps") if item.hasAttribute("pgs") =>
+        s.withGpsLocation(Session.GPSLocation.parseFrom(item.getBinary("pgs")))
+      case (s, "evs") if item.hasAttribute("evs") =>
+        s.withEvents(Session.Events.parseFrom(item.getBinary("evs")))
+      case (s, _) => s
     }
 
-  }
-
-  /*  def putSession_(appId: Int,
-                    ts: Long,
-                    sessionId: Long,
-                    uk: User.Key,
-                    events: Seq[Event]) = {
-      val sorted = events.sortBy(_.timestamp)
-      val compacted = sorted.foldLeft(Seq[Event]()) { (evs, ev) =>
-        // insert event to tail in the first time
-        if (evs.isEmpty) evs :+ ev
-        else {
-          val nev = evs.updated(
-            evs.size - 1,
-            // former's dwell time = latter - former
-            evs.last.copy(dwellTime = (ev.timestamp - evs.last.timestamp).toInt / 1000)
-          )
-          // TODO I think this logic should be first checked.
-          if (ev.`type` != "hb") nev :+ ev
-          else nev
-        }
-      }
-
-      val aggregation = Session.Aggregation(
-        duration = (sorted.last.timestamp - sorted.head.timestamp).toInt / 1000,
-        pageviews = compacted.count(_.`type` == "pv"),
-        sharings = compacted.count(e => e.`type` == "ui" && e.subType.toLowerCase.startsWith("share")),
-        likes = compacted.count(e => e.`type` == "ui" && e.subType.toLowerCase.startsWith("like"))
-      )
-      val compactedEvents = Session.Events(compacted)
-      val sortKey = Array[Byte](8)
-      val sortKeyBuffer = ByteBuffer.allocate(8)
-      sortKeyBuffer.putLong(ts)
-      sortKeyBuffer.putLong(sessionId)
-      sortKeyBuffer.get(sortKey)
-
-      putSession(appId, sortKey, uk, aggregation, compactedEvents)
-    }*/
-
-  def getSession(key: Session.Key) = Try {
-    val pk = key.appId
-    val sk = getSortKey(key.timestamp, key.sessionId)
-    val spec = new GetItemSpec()
-      .withPrimaryKey("aid", pk, "sid", sk)
-      .withAttributesToGet("oid", "agg", "evs", "gps")
-
-    val res = table.getItem(spec)
-    if (res.hasAttribute("gps")) {
-      Session()
-        .withKey(key)
-        .withUserKey(User.Key(pk, res.getString("oid")))
-        .withAggregation(Session.Aggregation.parseFrom(res.getBinary("agg")))
-        .withGpsLocation(Session.GPSLocation.parseFrom(res.getBinary("gps")))
-        .withEvents(Session.Events.parseFrom(res.getBinary("evs")))
-    } else {
-      Session()
-        .withKey(key)
-        .withUserKey(User.Key(pk, res.getString("oid")))
-        .withAggregation(Session.Aggregation.parseFrom(res.getBinary("agg")))
-        .withEvents(Session.Events.parseFrom(res.getBinary("evs")))
+  def getSession(appId: Int, ts: Long, sid: Long, attrs: Seq[String] = allAttributes) =
+    Try {
+      logger.debug(s"event=get_item pk=$appId ts=$ts sid=$sid attrs=$attrs")
+      val pk = appId
+      val sk = getSortKey(ts, sid)
+      val spec = new GetItemSpec()
+        .withPrimaryKey("aid", pk, "sid", sk)
+        .withAttributesToGet(attrs: _*)
+      buildSession(Session.Key(appId, ts, sid), attrs, table.getItem(spec))
     }
-  }
 
-  def queryEvents(appId: Int, start_ts: Long, end_ts: Long) = {
-    val pk = appId
-    // TODO why set 0 and -1
-    val ssk = getSortKey(start_ts, 0)
-    val esk = getSortKey(end_ts, -1)
-
-    val spec = new QuerySpec().withHashKey("aid", pk)
-      .withRangeKeyCondition(new RangeKeyCondition("sid").between(ssk, esk))
-      .withAttributesToGet("evs")
-    safeQuery(spec).flatMap { item =>
-      Session.Events.parseFrom(item.getBinary("evs")).events.iterator
-    }
-  }
-
-  def querySessions(appId: Int, start_ts: Long, end_ts: Long) = {
+  def querySessions(appId: Int, start_ts: Long, end_ts: Long, attrs: Seq[String] = allAttributes) = {
+    logger.debug(s"event=query_sessions pk=$appId start=$start_ts end=$end_ts attrs=$attrs")
     val pk = appId
     val ssk = getSortKey(start_ts, 0)
     val esk = getSortKey(end_ts, -1)
 
-    val spec = new QuerySpec().withHashKey("aid", pk)
+    val spec = new QuerySpec()
+      .withHashKey("aid", pk)
       .withRangeKeyCondition(new RangeKeyCondition("sid").between(ssk, esk))
-      .withAttributesToGet("sid", "oid", "agg", "gps", "evs")
-    safeQuery(spec).map { item =>
-      val s = Session()
-        .withKey(getSessionKey(appId, item.getBinary("sid")))
-        .withUserKey(User.Key(appId, item.getString("oid")))
-        .withAggregation(Session.Aggregation.parseFrom(item.getBinary("agg")))
-        .withEvents(Session.Events.parseFrom(item.getBinary("evs")))
-
-      if (item.hasAttribute("gps")) {
-        s.withGpsLocation(Session.GPSLocation.parseFrom(item.getBinary("gps")))
-      } else {
-        s
-      }
-    }
-  }
-
-  def queryUserKeys(appId: Int, start_ts: Long, end_ts: Long) = {
-    val pk = appId
-    val ssk = getSortKey(start_ts, 0)
-    val esk = getSortKey(end_ts, -1)
-
-    val spec = new QuerySpec().withHashKey("aid", pk)
-      .withRangeKeyCondition(new RangeKeyCondition("sid").between(ssk, esk))
-      .withAttributesToGet("oid")
+      .withAttributesToGet((attrs :+ "sid"): _*)
 
     safeQuery(spec).map { item =>
-      User.Key(appId, item.getString("oid"))
+      buildSession(getSessionKey(pk, item.getBinary("sid")), attrs, item)
     }
   }
 
-  def querySessionKeys(appId: Int, start_ts: Long, end_ts: Long) = {
+  def querySessionsWithOpenIds(appId: Int,
+                               start_ts: Long,
+                               end_ts: Long,
+                               openIds: Set[String],
+                               attrs: Seq[String] = allAttributes) = {
+    logger.debug(s"event=query_sessions_with_openids pk=$appId start=$start_ts end=$end_ts openids=$openIds attrs=$attrs")
     val pk = appId
     val ssk = getSortKey(start_ts, 0)
     val esk = getSortKey(end_ts, -1)
 
-    val spec = new QuerySpec().withHashKey("aid", pk)
-      .withRangeKeyCondition(new RangeKeyCondition("sid").between(ssk, esk))
-      .withAttributesToGet("sid")
-
-    safeQuery(spec).map { item =>
-      getSessionKey(appId, item.getBinary("sid"))
-    }
-  }
-
-  def queryAggregations(appId: Int, start_ts: Long, end_ts: Long) = {
-    val pk = appId
-    val ssk = getSortKey(start_ts, 0)
-    val esk = getSortKey(end_ts, -1)
-
-    val spec = new QuerySpec().withHashKey("aid", pk)
-      .withRangeKeyCondition(new RangeKeyCondition("sid").between(ssk, esk))
-      .withAttributesToGet("agg")
-
-    safeQuery(spec).map { item =>
-      Session.Aggregation.parseFrom(item.getBinary("agg"))
-    }
-  }
-
-  def queryUserKeysEvents(appId: Int,
-                          start_ts: Long,
-                          end_ts: Long,
-                          openIds: Set[String]) = {
-    val pk = appId
-    val ssk = getSortKey(start_ts, 0)
-    val esk = getSortKey(end_ts, -1)
     // we can only have at most 100 values in `in` set predicate
     // if userKeys are larger than this number, we have to split them up
     openIds.iterator.sliding(100, 100).flatMap { oids =>
-      val spec = new QuerySpec().withHashKey("aid", pk)
+      val spec = new QuerySpec()
+        .withHashKey("aid", pk)
         .withRangeKeyCondition(new RangeKeyCondition("sid").between(ssk, esk))
         .withQueryFilters(new QueryFilter("oid").in(oids: _*))
-        .withAttributesToGet("oid", "evs")
-
-      safeQuery(spec).flatMap { item =>
-        val uk = User.Key(appId, item.getString("oid"))
-        val ev = Session.Events.parseFrom(item.getBinary("evs"))
-        ev.events.map(e => (uk, e)).iterator
-      }
-    }
-  }
-
-  def queryUserKeysAggregations(appId: Int,
-                                start_ts: Long,
-                                end_ts: Long,
-                                openIds: Set[String]) = {
-    val pk = appId
-    val ssk = getSortKey(start_ts, 0)
-    val esk = getSortKey(end_ts, -1)
-    openIds.iterator.sliding(100, 100).flatMap { oids =>
-      val spec = new QuerySpec().withHashKey("aid", pk)
-        .withRangeKeyCondition(new RangeKeyCondition("sid").between(ssk, esk))
-        .withQueryFilters(new QueryFilter("oid").in(oids: _*))
-        .withAttributesToGet("oid", "agg")
+        .withAttributesToGet((attrs :+ "sid"): _*)
 
       safeQuery(spec).map { item =>
-        val uk = User.Key(appId, item.getString("oid"))
-        val agg = Session.Aggregation.parseFrom(item.getBinary("agg"))
-        (uk, agg)
-      }
-    }
-  }
-
-  def queryUserKeysSessions(appId: Int,
-                            start_ts: Long,
-                            end_ts: Long,
-                            openIds: Set[String]) = {
-    val pk = appId
-    val ssk = getSortKey(start_ts, 0)
-    val esk = getSortKey(end_ts, -1)
-    openIds.iterator.sliding(100, 100).flatMap { oids =>
-      val spec = new QuerySpec().withHashKey("aid", pk)
-        .withRangeKeyCondition(new RangeKeyCondition("sid").between(ssk, esk))
-        .withQueryFilters(new QueryFilter("oid").in(oids: _*))
-        .withAttributesToGet("sid", "oid", "agg", "evs")
-
-      safeQuery(spec).map { item =>
-        val s = new Session().withKey(getSessionKey(appId, item.getBinary("sid")))
-          .withUserKey(User.Key(appId, item.getString("oid")))
-          .withAggregation(Session.Aggregation.parseFrom(item.getBinary("agg")))
-          .withEvents(Session.Events.parseFrom(item.getBinary("evs")))
-        if (item.hasAttribute("gps")) {
-          (s.getUserKey, s.withGpsLocation(Session.GPSLocation.parseFrom(item.getBinary("pgs"))))
-        } else {
-          (s.getUserKey, s)
-        }
+        buildSession(getSessionKey(pk, item.getBinary("sid")), attrs, item)
       }
     }
   }

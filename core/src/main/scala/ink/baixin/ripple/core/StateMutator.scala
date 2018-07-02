@@ -85,4 +85,6 @@ trait StateMutator {
   def cleanUpSegments = updateDelegate {
     old => old.withSegments(old.segments.filter(s => s.provisioned || s.aggregated))
   }
+
+  def clearSegments = updateDelegate(old => old.clearSegments)
 }

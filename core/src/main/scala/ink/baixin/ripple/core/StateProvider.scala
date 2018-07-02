@@ -11,7 +11,6 @@ import com.amazonaws.services.dynamodbv2.model._
 import com.amazonaws.services.dynamodbv2.util.TableUtils
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.Logger
-import org.joda.time.{DateTime, DateTimeZone}
 import state._
 
 import scala.util.{Failure, Random, Success, Try}

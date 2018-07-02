@@ -1,7 +1,6 @@
 package ink.baixin.ripple.core
 
 import com.typesafe.config.ConfigFactory
-import com.typesafe.scalalogging.Logger
 import org.scalatest.FlatSpec
 
 class StateProviderSpec extends FlatSpec {
@@ -15,18 +14,15 @@ class StateProviderSpec extends FlatSpec {
 
   it should "listen state change successfully" in {
     val listener = provider.listener
-    val mutator = alterProvider.mutator
     val prev = listener.getState
 
     assert(prev.isDefined)
 
     // perform some mutation
-    val newst = mutator.addSegments(1)
     val task = listener.start
     Thread.sleep(5000) // wait for new state to be fetched
     task.cancel
     assert(listener.getState.get.segments.size > prev.get.segments.size)
-    assert(listener.getState.get == newst.get)
   }
 
   it should "mutate state as expected" in {
