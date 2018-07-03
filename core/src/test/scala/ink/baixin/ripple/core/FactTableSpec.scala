@@ -24,13 +24,13 @@ class FactTableSpec extends FlatSpec {
   }).iterator.sliding(10, 5).map { ts =>
     ts.zipWithIndex.map {
       case (t, 0) =>
-        Event(t, 0, "pv", "page-a-views", 0)
+        Event(t, 0, "pv", "page-a-views", "0")
       case (t, 3) =>
-        Event(t, 0, "ui", "share-action", 3)
+        Event(t, 0, "ui", "share-action", "3")
       case (t, 6) =>
-        Event(t, 0, "pv", "page-b-views", 6)
+        Event(t, 0, "pv", "page-b-views", "6")
       case (t, 9) =>
-        Event(t, 0, "ui", "like-action", 9)
+        Event(t, 0, "ui", "like-action", "9")
       case (t, _) =>
         Event(t, 0, "hb")
     }

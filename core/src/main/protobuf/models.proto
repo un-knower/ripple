@@ -7,23 +7,7 @@ message Record {
   int32 app_id = 2;
   string client_id = 3;
   string session_id = 4;
-  string referer = 5;
-  int32 scene = 6;
-  string type = 7;
-  string sub_type = 8;
-  int64 parameter = 9;
-  string extra_parameter = 10;
-  string nickname = 11;
-  string avatar_url = 12;
-  int32 gender = 13;
-  string city = 14;
-  string province = 15;
-  string country = 16;
-  string language = 17;
-  string open_id = 18;
-  double longitude = 19;
-  double latitude = 20;
-  double location_accuracy = 21;
+  map<string, string> values = 5;
 }
 
 message User {
@@ -51,7 +35,7 @@ message Event {
   int32 dwell_time = 2;
   string type = 3;
   string sub_type = 4;
-  int64 parameter = 5;
+  string parameter = 5;
 }
 
 message Session {

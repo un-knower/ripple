@@ -1,8 +1,14 @@
 val jodaVersion = "2.9.9"
+lazy val commonSettings = List(
+  organization := "ink.baixin",
+  scalaVersion := "2.12.6",
+  version      := "0.1.0-SNAPSHOT"
+)
 
 lazy val core = (project in file("."))
   .settings(
     name := "ripple-core",
+    inThisBuild(commonSettings),
     libraryDependencies ++= Seq(
       "com.typesafe.scala-logging" %% "scala-logging" % "3.9.0",
       "com.typesafe" % "config" % "1.3.1",

@@ -1,9 +1,16 @@
 val sparkVersion = "2.2.1"
 val jodaVersion = "2.9.9"
 
+lazy val commonSettings = List(
+  organization := "ink.baixin",
+  scalaVersion := "2.12.6",
+  version      := "0.1.0-SNAPSHOT"
+)
+
 lazy val spark = (project in file(".")).
   settings(
     name := "ripple-spark",
+    inThisBuild(commonSettings),
     libraryDependencies ++= Seq(
       "joda-time" % "joda-time" % jodaVersion,
       "com.github.scopt" %% "scopt" % "3.7.0",
