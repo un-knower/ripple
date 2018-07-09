@@ -30,20 +30,18 @@ message User {
   GeoLocation geo_location = 4;
 }
 
-message Event {
-  int64 timestamp = 1;
-  int32 dwell_time = 2;
-  string type = 3;
-  string sub_type = 4;
-  string parameter = 5;
-}
-
 message Session {
+  message Entrance {
+    int32 scene = 1;
+    string referrer = 2;
+  }
+
   message Aggregation {
     int32 duration = 1;
     int32 pageviews = 2;
     int32 sharings = 3;
     int32 likes = 4;
+    int32 total = 5;
   }
 
   message GPSLocation {
@@ -52,15 +50,30 @@ message Session {
     double location_accuracy = 3;
   }
 
-  message Events {
-    repeated Event events = 1;
+  message Event {
+    int64 timestamp = 1;
+    int32 dwell_time = 2;
+    string type = 3;
+    string sub_type = 4;
+    string parameter = 5;
+    string extra_parameter = 6;
+  }
+
+  message EventsPack {
+    repeated int64 timestamp = 1;
+    repeated int32 dwell_time = 2;
+    repeated string type = 3;
+    repeated string sub_type = 4;
+    repeated string parameter = 5;
+    repeated string extra_parameter = 6;
   }
 
   int32 app_id = 1;
   int64 timestamp = 2;
   int64 session_id = 3;
   string open_id = 4;
-  Aggregation aggregation = 5;
-  GPSLocation gps_location = 6;
-  Events events = 7;
+  Entrance entrance = 5;
+  Aggregation aggregation = 6;
+  GPSLocation gps_location = 7;
+  repeated Event events = 8;
 }

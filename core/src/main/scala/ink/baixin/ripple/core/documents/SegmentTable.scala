@@ -9,9 +9,9 @@ import ink.baixin.ripple.core.models._
 import scala.util.{Failure, Success, Try}
 
 
-class FactTable(private val table: Table) {
+class SegmentTable(private val table: Table) {
   private val logger = Logger(this.getClass)
-  val allAttributes = Seq("oid", "agg", "evs", "gps")
+  val allAttributes = Seq("oid", "ent", "agg", "evs", "gps")
 
   private def getSortKey(timestamp: Long, sessionId: Long) = {
     val bf = ByteBuffer.allocate(16)
@@ -40,55 +40,28 @@ class FactTable(private val table: Table) {
         Seq[Item]().iterator
     }
 
-  def putSession(aid: Int,
-                 ts: Long,
-                 sid: Long,
-                 openId: String,
-                 gps: Session.GPSLocation,
-                 events: Seq[Event]) = Try {
-    // check parameters
-    assert(!openId.isEmpty)
-    assert(!events.isEmpty)
-    logger.debug(s"event=put_session pk=$aid sid=$sid openid=$openId")
-
-    val sorted = events.sortBy(_.timestamp)
-    val uis = sorted.filter(_.`type` == "ui")
-    val pvs = sorted.foldLeft(Seq[Event]()) { (evs, e) =>
-      val prev = if (!evs.isEmpty) {
-        evs.updated(
-          evs.size - 1,
-          evs.last.withDwellTime((e.timestamp - evs.last.timestamp).toInt / 1000)
-        )
-      } else evs
-
-      if (e.`type` == "pv") prev :+ e else prev
+  private def packField(field: Any) = {
+    field match {
+      case Some(f: Session.Entrance) => f.toByteArray
+      case Some(f: Session.Aggregation) => f.toByteArray
+      case Some(f: Session.GPSLocation) => f.toByteArray
+      case Seq(events @ _*) =>
+        val evs = events.collect {
+          case e: Session.Event => e
+        }
+        Session.EventsPack(
+          evs.map(_.timestamp),
+          evs.map(_.dwellTime),
+          evs.map(_.`type`),
+          evs.map(_.subType),
+          evs.map(_.parameter),
+          evs.map(_.extraParameter)
+        ).toByteArray
+      case _ => Array[Byte](0)
     }
-    val merged = (uis ++ pvs).sortBy(_.timestamp)
-    val agg = Session.Aggregation(
-      duration = (sorted.last.timestamp - sorted.head.timestamp).toInt / 1000,
-      pageviews = merged.count(_.`type` == "pv"),
-      sharings = merged.count(e => e.`type` == "ui" && e.subType.toLowerCase.startsWith("share")),
-      likes = merged.count(e => e.`type` == "ui" && e.subType.toLowerCase.startsWith("like"))
-    )
-
-    val sk = getSortKey(ts, sid)
-    val evs = Session.Events(merged)
-    val keyItem = new Item()
-      .withPrimaryKey("aid", aid, "sid", sk)
-      .withString("oid", openId)
-
-    val item = Seq(
-      ("agg", agg.toByteArray),
-      ("gps", gps.toByteArray),
-      ("evs", evs.toByteArray)
-    ).foldLeft(keyItem) {
-      case (it, (attr, value)) if !value.isEmpty => it.withBinary(attr, value)
-      case (it, _) => it
-    }
-    table.putItem(item)
   }
 
-  private def buildSession(pk: Int, ts: Long, sid: Long, attrs: Seq[String], item: Item) =
+  private def packSession(pk: Int, ts: Long, sid: Long, attrs: Seq[String], item: Item) =
     attrs.foldLeft(
       Session().withAppId(pk).withTimestamp(ts).withSessionId(sid)
     ) {
@@ -99,9 +72,42 @@ class FactTable(private val table: Table) {
       case (s, "gps") if item.hasAttribute("pgs") =>
         s.withGpsLocation(Session.GPSLocation.parseFrom(item.getBinary("pgs")))
       case (s, "evs") if item.hasAttribute("evs") =>
-        s.withEvents(Session.Events.parseFrom(item.getBinary("evs")))
+        val eventsPack = Session.EventsPack.parseFrom(item.getBinary("evs"))
+        val events = for (i <- 0 until eventsPack.timestamp.size) yield {
+          Session.Event(
+            eventsPack.timestamp(i),
+            eventsPack.dwellTime(i),
+            eventsPack.`type`(i),
+            eventsPack.subType(i),
+            eventsPack.parameter(i),
+            eventsPack.extraParameter(i)
+          )
+        }
+        s.withEvents(events)
       case (s, _) => s
     }
+
+  def putSession(session: Session) = Try {
+    // check parameters
+    assert(!session.openId.isEmpty)
+    assert(!session.events.isEmpty)
+    logger.debug(s"event=put_session pk=${session.appId} ts=${session.timestamp} sid=${session.sessionId} openid=${session.openId}")
+
+    val keyItem = new Item()
+      .withPrimaryKey("aid", session.appId, "sid", getSortKey(session.timestamp, session.sessionId))
+      .withString("oid", session.openId)
+
+    val item = Seq(
+      ("ent", packField(session.entrance)),
+      ("agg", packField(session.aggregation)),
+      ("gps", packField(session.gpsLocation)),
+      ("evs", packField(session.events))
+    ).foldLeft(keyItem) {
+      case (it, (attr, value)) if !value.isEmpty => it.withBinary(attr, value)
+      case (it, _) => it
+    }
+    table.putItem(item)
+  }
 
   def getSession(appId: Int, ts: Long, sid: Long, attrs: Seq[String] = allAttributes) =
     Try {
@@ -111,7 +117,7 @@ class FactTable(private val table: Table) {
       val spec = new GetItemSpec()
         .withPrimaryKey("aid", pk, "sid", sk)
         .withAttributesToGet(attrs: _*)
-      buildSession(appId, ts, sid, attrs, table.getItem(spec))
+      packSession(appId, ts, sid, attrs, table.getItem(spec))
     }
 
   def querySessions(appId: Int, start_ts: Long, end_ts: Long, attrs: Seq[String] = allAttributes) = {
@@ -127,7 +133,7 @@ class FactTable(private val table: Table) {
 
     safeQuery(spec).map { item =>
       val (ts, sid) = parseSessionKey(item.getBinary("sid"))
-      buildSession(pk, ts, sid, attrs, item)
+      packSession(pk, ts, sid, attrs, item)
     }
   }
 
@@ -152,7 +158,7 @@ class FactTable(private val table: Table) {
 
       safeQuery(spec).map { item =>
         val (ts, sid) = parseSessionKey(item.getBinary("sid"))
-        buildSession(pk, ts, sid, attrs, item)
+        packSession(pk, ts, sid, attrs, item)
       }
     }
   }

@@ -18,6 +18,7 @@ trait StateMutator {
     // make sure we'll have enough segments in the future
     val today = DateTime.now(DateTimeZone.forID(old.timezone)).withTimeAtStartOfDay
     val safeTime = today.plusDays(2).getMillis
+    val expireTime = today.minusDays(7).getMillis
     var newState = old
     if (newState.segments.isEmpty) {
       // at first we make sure this is a initial segment
@@ -25,7 +26,7 @@ trait StateMutator {
         .withReservedId(newState.reservedId + 1)
         .addSegments(
           State.Segment(
-            newState.reservedId, false, false,
+            newState.reservedId, true, false,
             today.minusDays(2).getMillis, today.plusDays(1).getMillis
           )
         )
@@ -35,13 +36,20 @@ trait StateMutator {
         .withReservedId(newState.reservedId + 1)
         .addSegments(
           State.Segment(
-            newState.reservedId, false, false,
+            newState.reservedId, true, false,
             newState.segments.last.endTime,
             new DateTime(newState.segments.last.endTime).plusDays(3).getMillis
           )
         )
     }
-    newState
+
+    // unprovision expired segments
+    newState.withSegments(
+      newState.segments.map { seg =>
+        if (seg.endTime < expireTime) seg.withProvisioned(false)
+        else seg
+      }
+    )
   }
 
   def addSegments(n: Int): Option[State] = updateDelegate { old =>
@@ -55,7 +63,7 @@ trait StateMutator {
       .addAllSegments(
         for (i <- 0 until n) yield {
           State.Segment(
-            old.reservedId + i, false, false,
+            old.reservedId + i, true, false,
             s.plusDays(i * 3).getMillis, s.plusDays(i * 3 + 3).getMillis
           )
         }

@@ -9,6 +9,16 @@ lazy val core = (project in file("."))
   .settings(
     name := "ripple-core",
     inThisBuild(commonSettings),
+    crossScalaVersions := Seq("2.11.12"),
+    test in assembly := {},
+    assemblyShadeRules in assembly := Seq(
+      // protobuf-java has a conflict with spark-stream-kinesis-asl, use this shade to resolve the problem
+      ShadeRule.rename("com.google.protobuf.**" -> "com.google.protobufv3_5.@1")
+        .inLibrary(
+          "com.google.protobuf" % "protobuf-java" % "3.5.0",
+          "com.amazonaws" % "aws-java-sdk-dynamodb" % "1.11.330"
+        ).inProject
+    ),
     libraryDependencies ++= Seq(
       "com.typesafe.scala-logging" %% "scala-logging" % "3.9.0",
       "com.typesafe" % "config" % "1.3.1",

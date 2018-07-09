@@ -1,7 +1,6 @@
 package ink.baixin.ripple.core
 
 import java.util.concurrent.atomic.AtomicReference
-
 import com.amazonaws.regions.Regions
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder
 import com.amazonaws.services.dynamodbv2.document.{DynamoDB, Item, Table}
@@ -50,7 +49,12 @@ class StateProvider(project: String, config: Config) {
     new DynamoDB(dynamodbClient).getTable(tableName)
   }
 
-  private def syncState = stateRef.updateAndGet { old =>
+  private def compatUpdateAndGet(func: ((Long, Option[State])) => (Long, Option[State])) = {
+    // for compatibility in scala 2.11
+    stateRef.updateAndGet(t => func(t))
+  }
+
+  private def syncState = compatUpdateAndGet { old =>
     logger.debug(s"event=fetch_state project=$project")
     Try(
       metadataTable.getItem(new GetItemSpec()
@@ -96,7 +100,7 @@ class StateProvider(project: String, config: Config) {
   }
 
   private def internalUpdateState(uf: Option[State] => Option[State]) =
-    stateRef.updateAndGet { old =>
+    compatUpdateAndGet { old =>
       val (oldId, oldState) = old
       val (newId, newState) = (System.currentTimeMillis, uf(oldState))
 
@@ -161,8 +165,8 @@ class StateProvider(project: String, config: Config) {
       )
       .withProvisionedThroughput(
         new ProvisionedThroughput()
-          .withReadCapacityUnits(10L)
-          .withWriteCapacityUnits(5L)
+          .withReadCapacityUnits(20L)
+          .withWriteCapacityUnits(10L)
       )
 
     if (TableUtils.createTableIfNotExists(dynamodbClient, tableSpec)) {
@@ -174,7 +178,7 @@ class StateProvider(project: String, config: Config) {
     new DynamoDB(dynamodbClient).getTable(tableName)
   }
 
-  def ensureFactTable(tableName: String) = Try {
+  def ensureSegmentTable(tableName: String) = Try {
     val tableSpec = new CreateTableRequest()
       .withTableName(tableName)
       .withKeySchema(
@@ -187,8 +191,8 @@ class StateProvider(project: String, config: Config) {
       )
       .withProvisionedThroughput(
         new ProvisionedThroughput()
-          .withReadCapacityUnits(10L)
-          .withWriteCapacityUnits(5L)
+          .withReadCapacityUnits(20L)
+          .withWriteCapacityUnits(10L)
       )
 
     if (TableUtils.createTableIfNotExists(dynamodbClient, tableSpec)) {
@@ -211,9 +215,6 @@ class StateProvider(project: String, config: Config) {
   }
 
   lazy val listener = new StateListener {
-    override val listenInterval =
-      if (config.hasPath("listen-internal")) config.getInt("listen-internal") else 30 * 1000
-
     override def getState: Option[State] = stateRef.get._2
 
     override def syncAndGetState: Option[State] = syncState._2
@@ -236,6 +237,6 @@ class StateProvider(project: String, config: Config) {
 
     override def getUserTableDelegate(name: String): Table = ensureUserTable(name).get
 
-    override def getFactTableDelegate(name: String): Table = ensureFactTable(name).get
+    override def getSegmentTableDelegate(name: String): Table = ensureSegmentTable(name).get
   }
 }

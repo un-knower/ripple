@@ -5,7 +5,7 @@ import com.typesafe.scalalogging.Logger
 import org.scalatest.FlatSpec
 import models._
 
-class FactTableSpec extends FlatSpec {
+class SegmentTableSpec extends FlatSpec {
   private val logger = Logger(this.getClass)
   private val testConfig = ConfigFactory.load.getConfig("ripple-test")
 

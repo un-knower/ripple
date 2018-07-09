@@ -22,7 +22,7 @@ class UserTable(private val table: Table) {
       case Failure(e) => Seq[Item]().iterator
     }
 
-  private def buildUser(pk: Int, openId: String, attrs: Seq[String], item: Item) =
+  private def unpackUser(pk: Int, openId: String, attrs: Seq[String], item: Item) =
     attrs.foldLeft(
       User().withAppId(pk).withOpenId(openId)
     ) {
@@ -33,26 +33,31 @@ class UserTable(private val table: Table) {
       case (u, _) => u
     }
 
+  private def packField(field: Any) = {
+    field match {
+      case Some(f: User.Profile) => f.toByteArray
+      case Some(f: User.GeoLocation) => f.toByteArray
+      case _ => Array[Byte](0)
+    }
+  }
+
   def getUser(appId: Int, openId: String, attrs: Seq[String] = allAttributes) = Try {
     logger.debug(s"event=get_user pk=$appId openid=$openId")
     val spec = new GetItemSpec()
       .withPrimaryKey("aid", appId, "oid", openId)
       .withAttributesToGet(attrs: _*)
     val res = table.getItem(spec)
-    buildUser(appId, openId, attrs, res)
+    unpackUser(appId, openId, attrs, res)
   }
 
-  def putUser(appId: Int,
-              openId: String,
-              profile: User.Profile,
-              geoLocation: User.GeoLocation) = Try {
-    logger.debug(s"event=put_user pk=$appId openid=$openId")
+  def putUser(user: User) = Try {
+    logger.debug(s"event=put_user pk=${user.appId} openid=${user.openId}")
     val keyItem = new Item()
-      .withPrimaryKey("aid", appId, "oid", openId)
+      .withPrimaryKey("aid", user.appId, "oid", user.openId)
 
     val item = Seq(
-      ("prf", profile.toByteArray),
-      ("geo", geoLocation.toByteArray)
+      ("prf", packField(user.profile)),
+      ("geo", packField(user.geoLocation))
     ).foldLeft(keyItem) {
       case (it, (attr, value)) if !value.isEmpty => it.withBinary(attr, value)
       case (it, _) => it
@@ -66,7 +71,7 @@ class UserTable(private val table: Table) {
       .withHashKey("aid", appId)
       .withAttributesToGet((attrs :+ "oid"): _*)
     safeQuery(spec).map { item =>
-      buildUser(appId, item.getString("oid"), attrs, item)
+      unpackUser(appId, item.getString("oid"), attrs, item)
     }
   }
 
@@ -79,7 +84,7 @@ class UserTable(private val table: Table) {
 
     safeQuery(spec).collect {
       case item if openIds.contains(item.getString("oid")) =>
-        buildUser(appId, item.getString("oid"), attrs, item)
+        unpackUser(appId, item.getString("oid"), attrs, item)
     }
   }
 }
