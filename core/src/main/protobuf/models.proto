@@ -7,6 +7,8 @@ message Record {
   int32 app_id = 2;
   string client_id = 3;
   string session_id = 4;
+  int32 repeat_times = 6;
+  string namespace = 7;
   map<string, string> values = 5;
 }
 
@@ -53,27 +55,70 @@ message Session {
   message Event {
     int64 timestamp = 1;
     int32 dwell_time = 2;
+
     string type = 3;
     string sub_type = 4;
     string parameter = 5;
     string extra_parameter = 6;
+    int32 repeat_times = 7;
   }
 
   message EventsPack {
     repeated int64 timestamp = 1;
     repeated int32 dwell_time = 2;
+
     repeated string type = 3;
     repeated string sub_type = 4;
     repeated string parameter = 5;
     repeated string extra_parameter = 6;
+    repeated int32 repeat_times = 7;
   }
 
   int32 app_id = 1;
   int64 timestamp = 2;
   int64 session_id = 3;
   string open_id = 4;
+
   Entrance entrance = 5;
   Aggregation aggregation = 6;
   GPSLocation gps_location = 7;
   repeated Event events = 8;
+}
+
+message AggregationRecord {
+  int32 app_id = 1;
+  int32 time_hour = 2;
+  string open_id = 3;
+
+  int32 sum_duration = 4;
+  int32 sum_pageviews = 5;
+  int32 sum_sharings = 6;
+  int32 sum_likes = 7;
+  int32 sum_total = 8;
+
+  int32 count_session = 9;
+  int64 max_starttime = 10;
+}
+
+message AggregationPack {
+  repeated int32 time_hour = 1;
+  repeated string open_id = 2;
+
+  repeated int32 sum_duration = 3;
+  repeated int32 sum_pageviews = 4;
+  repeated int32 sum_sharings = 5;
+  repeated int32 sum_likes = 6;
+  repeated int32 sum_total = 7;
+
+  repeated int32 count_session = 8;
+  repeated int64 max_starttime = 9;
+}
+
+message CountRecord {
+  int32 app_id = 1;
+  string open_id = 2;
+  string event_type = 3;
+  string event_key = 4;
+  int32 count = 5;
+  int64 timestamp = 6;
 }

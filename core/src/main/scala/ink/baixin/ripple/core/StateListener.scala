@@ -6,11 +6,11 @@ import state._
 trait StateListener {
   private val logger = Logger(this.getClass)
 
-  def start(interval: Int = 30 * 1000)(f: Option[State] => Unit) = {
-    logger.info("event=start_listening_state")
+  def start(interval: Int = 30000)(f: (Option[State]) => Unit) = {
+    logger.info(s"event=start_listening_state")
     val timer = new java.util.Timer()
-    val task = new java.util.TimerTask {
-      override def run = {
+    val task = new java.util.TimerTask() {
+      override def run {
         f(syncAndGetState)
       }
     }

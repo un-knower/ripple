@@ -5,17 +5,15 @@ package ink.baixin.ripple.core;
 message State {
   string project = 1;
   string timezone = 2;
-  string fact_table = 3;
-  string resource_bucket = 4;
-  int64 reserved_id = 5;
+  int64 reserved_id = 4;
+  int64 watermark = 6;
 
   message Segment {
     int64 id = 1;
-    bool provisioned = 2;
-    bool aggregated = 3;
-    int64 start_time = 4;
-    int64 end_time = 5;
+    bool enabled = 2;
+    int64 start_time = 3;
+    int64 end_time = 4;
   }
 
-  repeated Segment segments = 6;
+  repeated Segment segments = 5;
 }

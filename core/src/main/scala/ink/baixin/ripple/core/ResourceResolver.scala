@@ -2,57 +2,89 @@ package ink.baixin.ripple.core
 
 import java.util.concurrent.TimeUnit
 import com.amazonaws.services.dynamodbv2.document.Table
-import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
-import ink.baixin.ripple.core.documents.{SegmentTable, UserTable}
+import com.google.common.cache.{ LoadingCache, CacheLoader, CacheBuilder }
 import state._
+import documents._
 
 trait ResourceResolver {
+
   protected def getStateDelegate: Option[State]
-
   protected def syncAndGetStateDelegate: Option[State]
-
+  protected def getFactTableDelegate(name: String): Table
   protected def getUserTableDelegate(name: String): Table
+  protected def getCountTableDelegate(name: String): Table
+  protected def getAggregationTableDelegate(name: String): Table
 
-  protected def getSegmentTableDelegate(name: String): Table
-
-  private val segmentTableCache: LoadingCache[String, SegmentTable] = {
+  private val tableCache: LoadingCache[String, Option[Any]] = {
     CacheBuilder
       .newBuilder()
       .maximumSize(50)
-      .expireAfterAccess(1, TimeUnit.HOURS)
+      .expireAfterAccess(1, TimeUnit.DAYS)
       .build(
-        new CacheLoader[String, SegmentTable] {
-          override def load(name: String): SegmentTable =
-            new SegmentTable(getSegmentTableDelegate(name))
+        new CacheLoader[String, Option[Any]]() {
+          override def load(name: String): Option[Any] = {
+            if (name.endsWith("fact")) {
+              Some(new FactTable(getFactTableDelegate(name)))
+            } else if (name.endsWith("users")) {
+              Some(new UserTable(getUserTableDelegate(name)))
+            } else if (name.endsWith("count")) {
+              Some(new CountTable(getCountTableDelegate(name)))
+            } else if (name.endsWith("agg")) {
+              Some(new AggregationTable(getAggregationTableDelegate(name)))
+            } else {
+              None
+            }
+          }
         }
       )
   }
 
-  def getSegmentTables =
+  def getFactTable =
     syncAndGetStateDelegate match {
       case Some(state) =>
-        state.segments.collect {
-          case seg if seg.provisioned =>
-            val name = getSegmentTableName(state, seg)
-            val table = segmentTableCache.get(name)
-            (seg, table)
+        tableCache.get(getFactTableName(state)).collect {
+          case e: FactTable => e
         }
-      case None =>
-        Seq()
+      case None => None
     }
 
   def getUserTable =
     syncAndGetStateDelegate match {
       case Some(state) =>
-        val name = getUserTableName(state)
-        Some(new UserTable(getUserTableDelegate(name)))
+        tableCache.get(getUserTableName(state)).collect {
+          case e: UserTable => e
+        }
+      case None => None
+    }
+
+  def getCountTable =
+    syncAndGetStateDelegate match {
+      case Some(state) =>
+        tableCache.get(getCountTableName(state)).collect {
+          case e: CountTable => e
+        }
+      case None => None
+    }
+
+  def getAggregationTable =
+    syncAndGetStateDelegate match {
+      case Some(state) =>
+        tableCache.get(getAggregationTableName(state)).collect {
+          case e: AggregationTable => e
+        }
       case None =>
         None
     }
 
-  def getSegmentTableName(state: State, seg: State.Segment) =
-    s"${state.project}-${state.factTable}-${seg.id}"
+  def getFactTableName(state: State) =
+    s"ripple-${state.project}-fact"
 
   def getUserTableName(state: State) =
-    s"${state.project}-${state.factTable}-users"
+    s"ripple-${state.project}-users"
+
+  def getCountTableName(state: State) =
+    s"ripple-${state.project}-count"
+
+  def getAggregationTableName(state: State) =
+    s"ripple-${state.project}-agg"
 }

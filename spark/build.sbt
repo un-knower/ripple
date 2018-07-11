@@ -1,4 +1,4 @@
-val sparkVersion = "2.3.0"
+val sparkVersion = "2.3.1"
 val jodaVersion = "2.9.9"
 
 lazy val commonSettings = List(
@@ -12,7 +12,7 @@ lazy val spark = (project in file(".")).
     name := "ripple-spark",
     inThisBuild(commonSettings),
     test in assembly := {},
-    assemblyJarName in assembly := "dime-jobs.jar",
+    assemblyJarName in assembly := "ripple-jobs.jar",
     assemblyMergeStrategy in assembly := {
       case m if m.toLowerCase.endsWith("manifest.mf") => MergeStrategy.discard
       case m if m.startsWith("META-INF") => MergeStrategy.discard
@@ -42,6 +42,9 @@ lazy val spark = (project in file(".")).
       "com.github.scopt" %% "scopt" % "3.7.0",
       "com.typesafe" % "config" % "1.3.1",
       "com.typesafe.scala-logging" %% "scala-logging" % "3.9.0",
+      "io.spray" %%  "spray-json" % "1.3.3",
+      "io.netty" % "netty-all" % "4.1.25.Final",
+
       "ink.baixin" %% "ripple-core" % "0.1.0-SNAPSHOT" exclude("com.google.protobuf", "protobuf-java"),
 
       "org.apache.spark" % "spark-core_2.11" % sparkVersion % "provided",
