@@ -14,8 +14,8 @@ import com.google.common.collect.ContiguousSet
 import com.google.common.collect.DiscreteDomain
 import ink.baixin.ripple.query.rel.RippleTableScan
 import ink.baixin.ripple.query.utils.FilterInference
-
 import RelOptRule._
+import ink.baixin.ripple.query.tables.RippleExprSimplifier
 
 class RippleFilterTableScanRule(relBuilderFactory: RelBuilderFactory) extends RelOptRule(
   operand(classOf[Filter], operand(classOf[RippleTableScan], none())),
@@ -29,17 +29,19 @@ class RippleFilterTableScanRule(relBuilderFactory: RelBuilderFactory) extends Re
     val appIdIndex = tableScan.fields.indexOf("app_id")
     val openIdIndex = tableScan.fields.indexOf("open_id")
     val timestampIndex = tableScan.fields.indexOf("timestamp")
+    val cstDtIndex = tableScan.fields.indexOf("cst_date")
 
     val rexBuilder = call.builder.getRexBuilder
     val rexExecuter = call.getPlanner.getExecutor
     val rexSimplify = new RexSimplify(rexBuilder, false, rexExecuter)
+    val exprSimplifier = new RippleExprSimplifier(rexSimplify, false)
 
-    val condition = rexSimplify.simplify(filter.getCondition)
+    val condition = exprSimplifier.apply(filter.getCondition)
 
     val predicate = tableScan.predicate.copy(
       appId = mergeOption(inferAppId(appIdIndex, condition), tableScan.predicate.appId),
       openIds = mergeOption(inferOpenIds(openIdIndex, condition), tableScan.predicate.openIds),
-      timeRange = mergeOption(inferTimestamp(timestampIndex, condition), tableScan.predicate.timeRange)
+      timeRange = mergeOption(inferTimestamp(timestampIndex, cstDtIndex, condition), tableScan.predicate.timeRange)
     )
 
     val pushable = new java.util.ArrayList[RexNode]()
@@ -92,19 +94,28 @@ class RippleFilterTableScanRule(relBuilderFactory: RelBuilderFactory) extends Re
     }
   }
 
-  private def inferTimestamp(idx: Int, node: RexNode) = {
-    if (idx < 0) None
-    else {
-      val rangeset = FilterInference.infer[java.lang.Long](idx, Seq(node), 0L)
-      if (!rangeset.isEmpty) {
-        val range = rangeset.span
-        val limit = Range.closedOpen[java.lang.Long](0L, Long.MaxValue)
-        val safeRange = range.intersection(limit)
+  private def inferTimestamp(tsIdx: Int, cstDtIdx: Int, node: RexNode) = {
+    val tsLimit = Range.closedOpen[java.lang.Long](0L, Long.MaxValue)
+    val dtLimit = Range.closedOpen[java.lang.Integer](0, Int.MaxValue)
 
-        val timestampSet = ContiguousSet.create(safeRange, DiscreteDomain.longs)
-        Some(timestampSet.first.toLong, timestampSet.last.toLong)
-      } else None
-    }
+    val tsRange =
+      if (tsIdx < 0) tsLimit
+      else FilterInference.infer[java.lang.Long](tsIdx, Seq(node), 0L).span.intersection(tsLimit)
+
+    val dtRange =
+      if (cstDtIdx < 0) tsLimit
+      else {
+        val dt = FilterInference.infer[java.lang.Integer](cstDtIdx, Seq(node), 0).span.intersection(dtLimit)
+        Range.range[java.lang.Long](
+          (dt.lowerEndpoint().toLong * 24 - 8) * 3600 * 1000, dt.lowerBoundType,
+          (dt.upperEndpoint().toLong * 24 + 16) * 3600 * 1000, dt.upperBoundType
+        )
+      }
+
+    val range = tsRange.intersection(dtRange)
+    val tsSet = ContiguousSet.create(range, DiscreteDomain.longs)
+    if (tsSet.isEmpty) Some(0L, 0L)
+    else Some(tsSet.first.toLong, tsSet.last.toLong)
   }
 }
 

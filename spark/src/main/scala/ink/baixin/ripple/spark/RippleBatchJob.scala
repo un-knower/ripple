@@ -5,21 +5,7 @@ import org.joda.time.{ DateTime, Days, Interval, DateTimeZone }
 import org.apache.spark._
 import org.apache.spark.rdd.RDD
 import ink.baixin.ripple.core.StateProvider
-import ink.baixin.ripple.core.models.{ Record, AggregationRecord }
-
-case class AggSession(
-                       appId: Int,
-                       openId: String,
-                       pageviews: Int,
-                       sharings: Int,
-                       likes: Int,
-                       total: Int,
-                       starttime: Long,
-                       endtime: Long
-                     ) {
-  val duration = (endtime - starttime).toInt
-}
-
+import ink.baixin.ripple.core.models.{ Record, Session, AggregationRecord }
 
 object RippleBatchJob {
   private val logger = Logger(this.getClass)
@@ -40,7 +26,7 @@ object RippleBatchJob {
             case (Some(aid), Some(cid), Some(sid)) =>
               Some(Record(
                 new DateTime(ts).getMillis,
-                aid.toInt, cid, sid, 0, path, values
+                aid.toInt, cid, sid, 1, path, values
               ))
             case _ => None
           }
@@ -70,72 +56,49 @@ object RippleBatchJob {
     } toMap
   }
 
-  def shouldSplit(records: Seq[AggSession], record: Record) = {
+  def shouldSplit(records: Seq[Record], record: Record) = {
     // add new session when records is empty
     (records.isEmpty ||
       // add new session when there is a long gap between two events and the next event is pv
-      ((record.timestamp - records.last.endtime) > 60000) ||
+      ((record.timestamp - records.last.timestamp) > 60000) ||
       // add new session when open id of two events are different
-      ((!records.last.openId.isEmpty) &&
+      ((!records.last.values.getOrElse("uoid", "").isEmpty) &&
         (!record.values.getOrElse("uoid", "").isEmpty) &&
-        (records.last.openId != record.values.getOrElse("uoid", ""))))
+        (records.last.values("uoid") != record.values("uoid"))))
   }
 
   def getSessions(records: Seq[Record]) = {
-    records.foldLeft(Seq[AggSession]()) {
+    val recSeq = records.foldLeft(Seq[Seq[Record]]()) {
       (res, rec) =>
-        val (nres, sess) =
-          if (shouldSplit(res, rec)) {
-            val s = AggSession(
-              rec.appId,
-              rec.values.getOrElse("uoid", ""),
-              0, 0, 0, 0, rec.timestamp, rec.timestamp
-            )
-            (res, s)
-          } else {
-            val openId = if (res.last.openId.isEmpty) {
-              rec.values.getOrElse("uoid", "")
-            } else {
-              res.last.openId
-            }
-            (res.slice(0, res.length - 1), res.last.copy(openId = openId))
-          }
+        if (res.isEmpty) Seq(Seq(rec))
+        else if (shouldSplit(res.last, rec)) res :+ Seq(rec)
+        else res.updated(res.size - 1, res.last :+ rec)
+    }
 
-        val typ = rec.values.getOrElse("et", "")
-        val subtype = rec.values.getOrElse("est", "")
-
-        if (typ == "pv") {
-          nres :+ sess.copy(
-            pageviews = sess.pageviews + 1,
-            total = sess.total + 1,
-            endtime = rec.timestamp
-          )
-        } else if (typ == "ui") {
-          nres :+ sess.copy(
-            likes = sess.likes + (if (subtype.startsWith("like")) 0 else 1),
-            sharings = sess.sharings + (if (subtype.startsWith("share")) 0 else 1),
-            total = sess.total + 1,
-            endtime = rec.timestamp
-          )
-        } else {
-          nres :+ sess.copy(endtime = rec.timestamp)
+    recSeq.flatMap {
+      (recs) =>
+        recs.map(_.values.getOrElse("uoid", "")).find(!_.isEmpty).map {
+          (openId) => SessionState(openId = openId, events = recs, closed = true)
+        } collect {
+          case (state) if state.shouldEmit => state.getSession
         }
     }
   }
 
-  def addAggSession(rec: AggregationRecord, s: AggSession) = {
-    rec.copy(
-      sumDuration = rec.sumDuration + s.duration,
-      sumPageviews = rec.sumPageviews + s.pageviews,
-      sumSharings = rec.sumSharings + s.sharings,
-      sumLikes = rec.sumLikes + s.likes,
-      sumTotal = rec.sumTotal + s.total,
-      countSession = rec.countSession + 1,
-      maxStarttime = math.max(rec.maxStarttime, s.starttime)
-    )
-  }
+  def getCSTDate(ts: Long) = (((ts / 3600 / 1000) + 8) / 24).toInt
 
-  def mergeAggRecord(a: AggregationRecord, b: AggregationRecord) = {
+  def addToAggregation(agg: AggregationRecord, session: Session) =
+    AggregationRecord(
+      sumDuration = agg.sumDuration + session.getAggregation.duration,
+      sumPageviews = agg.sumPageviews + session.getAggregation.pageviews,
+      sumSharings = agg.sumSharings + session.getAggregation.sharings,
+      sumLikes = agg.sumLikes + session.getAggregation.likes,
+      sumTotal = agg.sumTotal + session.getAggregation.total,
+      countSession = agg.countSession + 1,
+      maxTimestamp = math.max(agg.maxTimestamp, session.timestamp)
+    )
+
+  def mergeAggregations(a: AggregationRecord, b: AggregationRecord) =
     AggregationRecord(
       sumDuration = a.sumDuration + b.sumDuration,
       sumPageviews = a.sumPageviews + b.sumPageviews,
@@ -143,43 +106,17 @@ object RippleBatchJob {
       sumLikes = a.sumLikes + b.sumLikes,
       sumTotal = a.sumTotal + b.sumTotal,
       countSession = a.countSession + b.countSession,
-      maxStarttime = math.max(a.maxStarttime, b.maxStarttime)
+      maxTimestamp = math.max(a.maxTimestamp, b.maxTimestamp)
     )
-  }
 
-  def buildTimeRange(sc: SparkContext, tr: Interval, appName: String, namespaces: Set[String]) {
-    val records = getRecords(
-      sc,
-      tr.getStart.minusHours(1).withZone(DateTimeZone.UTC).withTimeAtStartOfDay,
-      tr.getEnd.plusHours(1).withZone(DateTimeZone.UTC).withTimeAtStartOfDay,
-      namespaces
-    )
-    val sessions = getSessions(records).filter(s => (!s.openId.isEmpty) && (tr.contains(s.starttime)))
 
-    val baseAggs = sessions
-      .map(s => ((s.appId, (s.starttime / 3600000).toInt, s.openId), s))
-      .aggregateByKey(AggregationRecord())(addAggSession, mergeAggRecord)
 
-    // write app hour aggregations
-    baseAggs.map {
-      case (k, agg) => ((k._1, k._2), agg.copy(k._1, k._2, k._3))
-    }.groupByKey.foreach {
-      case ((appId, hour), iter) =>
-        DataWriter.writeAggregations(appName, appId, hour, iter.toSeq)
-    }
+  def getRecords(sc: SparkContext, s: DateTime, e: DateTime, namespaces: Set[String]) = {
+    val start = s.withZone(DateTimeZone.UTC).withTimeAtStartOfDay
+    val end = e.withZone(DateTimeZone.UTC).withTimeAtStartOfDay
 
-    // write app openId aggregations
-    baseAggs.map {
-      case (k, agg) => ((k._1, k._3, k._2 / 24), agg.copy(k._1, k._2))
-    }.groupByKey.foreach {
-      case ((appId, openId, date), iter) =>
-        DataWriter.writeAggregations(appName, appId, openId, date, iter.toSeq)
-    }
-  }
-
-  def getRecords(sc: SparkContext, start: DateTime, end: DateTime, namespaces: Set[String]) = {
     val days = for (i <- 0 to Days.daysBetween(start, end).getDays) yield start.plusDays(i)
-    val dirs = days.map(d => s"${baseUrl}/${d.toString("yyyy/MM/dd")}")
+    val dirs = days.map(d => s"${baseUrl}/${d.toString("yyyy/MM/dd")}").toSet
 
     logger.info(s"event=get_records start=$start end=$end dirs=$dirs")
     val files = dirs.map(path => sc.textFile(path))
@@ -189,7 +126,7 @@ object RippleBatchJob {
       .filter(rec => namespaces.contains(rec.namespace))
   }
 
-  def getSessions(records: RDD[Record]): RDD[AggSession] = {
+  def getSessions(records: RDD[Record]): RDD[Session] = {
     records
       .groupBy(rec => (rec.appId, rec.clientId, rec.sessionId))
       .flatMap {
@@ -201,46 +138,35 @@ object RippleBatchJob {
   def run(option: RippleJobOption, sp: StateProvider) {
     val conf = new SparkConf().setAppName(option.appName)
     val sc = new SparkContext(conf)
+    val state = sp.listener.syncAndGetState.get
 
-    while (true) {
-      logger.info(s"event=try_to_build_aggregation namespaces=${option.namespaces}")
-      val state = sp.listener.syncAndGetState
-      state.foreach {
-        (state) =>
-          val last = {
-            new DateTime(math.max(state.watermark, DateTime.now.minusDays(100).getMillis))
-              .withTimeAtStartOfDay
-          }
+    val today = DateTime.now.withZone(DateTimeZone.forID("Asia/Shanghai")).withTimeAtStartOfDay
+    val last =
+      if (today.minusDays(5).isAfter(0)) today.minusDays(5)
+      else (new DateTime(state.watermark)).withZone(DateTimeZone.forID("Asia/Shanghai")).withTimeAtStartOfDay
 
-          val limit = {
-            new DateTime(math.min(DateTime.now.minusDays(1).getMillis, last.plusDays(10).getMillis))
-              .withTimeAtStartOfDay
-          }
-
-          if (limit.isAfter(last) && Days.daysBetween(last, limit).getDays >= 1) {
-            try {
-              buildTimeRange(sc, new Interval(last, limit), option.appName, option.namespaces)
-              logger.info(s"event=update_watermark datetime=$limit millis=${limit.getMillis}")
-              sp.mutator.updateWatermark(limit.getMillis)
-            } catch {
-              case e: Throwable =>
-                logger.error(s"event=failed_to_build_aggregation error=$e")
-                // sleep for a long time before try again
-                Thread.sleep(60 * 60 * 1000)
-            }
-          } else {
-            val l = new DateTime(math.max(last.getMillis, limit.getMillis)).withTimeAtStartOfDay
-            val d = l.plusDays(1)
-            val n = DateTime.now
-            if (d.isAfter(n)) Thread.sleep(n.getMillis - d.getMillis)
-          }
-      }
-
-      if (state.isEmpty) {
-        // Get state failed, sleep for a short time
-        logger.error(s"event=get_state_failed")
-        Thread.sleep(5 * 60 * 1000)
-      }
+    if (last.isAfter(today)) {
+      logger.info(s"event=no_need_to_build last=$last today=$today")
+      return
     }
+
+    val interval = new Interval(last, today)
+    logger.info(s"event=build_aggregations interval=$interval namespaces=${option.namespaces}")
+    val records = getRecords(sc, last.minusHours(1), today.plusHours(1), option.namespaces)
+    val sessions = getSessions(records).filter(s => interval.contains(s.timestamp))
+
+    val basicAgg = sessions
+      .map(s => ((s.appId, s.openId, getCSTDate(s.timestamp)), s))
+      .aggregateByKey(AggregationRecord())(addToAggregation _, mergeAggregations _)
+      .map{
+        case ((appId, openId, cstDate), v) => ((appId, openId), v.copy(cstDate = cstDate))
+      } groupByKey
+
+    basicAgg.foreach {
+      case ((appId, openId), iter) =>
+        DataWriter.writeAggregations(option.appName, appId, openId, iter.toSeq)
+    }
+
+    sp.mutator.updateWatermark(today.getMillis)
   }
 }

@@ -22,7 +22,7 @@ object RippleStreamingJob {
       .regionName(option.region)
       .streamName(option.stream)
       .endpointUrl(option.endPointURL)
-      .checkpointAppName(s"ripple-${option.appName}-kinesis")
+      .checkpointAppName(s"dime-${option.appName}-kinesis")
       .checkpointInterval(Seconds(option.checkpointInterval))
       .initialPositionInStream(InitialPositionInStream.LATEST)
       .buildWithMessageHandler {
@@ -32,7 +32,7 @@ object RippleStreamingJob {
           (r, id)
       }
       .filter {
-        case (r, id) if namespaces.contains(r.namespace) => true
+        case (r, id) => namespaces.contains(r.namespace)
         case _ => false
       }
 
@@ -87,8 +87,8 @@ object RippleStreamingJob {
         (st) =>
           if (st.openId.isEmpty) {
             val oid = st.events.last.values.getOrElse("uoid", "")
-            st.copy(id, openId = oid, events = st.events.sortBy(_.timestamp))
-          } else st.copy(events = st.events.sortBy(_.timestamp))
+            st.copy(st.getTimestamp, id, openId = oid, events = st.events.sortBy(_.timestamp))
+          } else st.copy(st.getTimestamp, events = st.events.sortBy(_.timestamp))
       } map {
         (st) =>
           if (st.shouldEmit) {

@@ -35,7 +35,7 @@ object Notifier {
                           parameter: Long = 0,
                           extra_parameter: String = "",
                           dwell_time: Int = 0,
-                          repeated_times: Int = 0,
+                          repeat_times: Int = 0,
                           timestamp: Date
                         )
 

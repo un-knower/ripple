@@ -29,6 +29,7 @@ class SessionScanTable(private val sp: StateProvider) extends RippleTable {
     ("longitude", SqlTypeName.DOUBLE),
     ("latitude", SqlTypeName.DOUBLE),
     ("accuracy", SqlTypeName.DOUBLE),
+    ("cst_date", SqlTypeName.DATE),
     ("timestamp", SqlTypeName.TIMESTAMP)
   )
   override val fieldGroups = Map(
@@ -99,6 +100,9 @@ class SessionScanTable(private val sp: StateProvider) extends RippleTable {
           case Some(gps) => gps.locationAccuracy.asInstanceOf[java.lang.Double]
           case _ => null
         }
+      case "cst_date"  =>
+        val hr = (session.timestamp / 3600 / 1000).toInt
+        ((hr + 8) / 24).asInstanceOf[java.lang.Integer]
       case "timestamp"  =>
         session.timestamp.asInstanceOf[java.lang.Long]
     }

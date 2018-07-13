@@ -10,7 +10,7 @@ import ink.baixin.ripple.core.models.{ Record, Session, User, AggregationRecord 
 class DataWriter(appName: String) {
   private val logger = Logger(this.getClass)
 
-  private val config = ConfigFactory.load().getConfig("ripple")
+  private val config = ConfigFactory.load().getConfig("dime")
   private val sp = new StateProvider(appName, config)
 
   private val userTable = sp.resolver.getUserTable
@@ -28,30 +28,30 @@ class DataWriter(appName: String) {
 
   private def getRecordInfo(rec: Record) = Try {
     val et = rec.values("et")
-    val key = if (et == "ui") {
-      import spray.json._
-      rec.values("eep").parseJson.asJsObject.getFields("key") match {
-        case Seq(JsString(key)) => key
-        case _ => throw new Exception("Can not parse event key")
-      }
-    } else {
-      rec.values("est")
-    }
-
     assert(et == "pv" || et == "ui")
+
+    import spray.json._
+    val param = if (rec.values.getOrElse("eep", "").trim.isEmpty) "{}" else rec.values("eep")
+    val key = param.parseJson.asJsObject.getFields("key") match {
+      case Seq(JsString(key)) => key
+      case _ =>
+        if (et != "pv") logger.warn(s"event=can_not_parse_record_key record=$rec")
+        rec.values("est")
+    }
 
     (et, key)
   }
 
   private def getEventKey(eve: Session.Event) = Try {
-    if (eve.`type` == "ui") {
-      import spray.json._
-      eve.extraParameter.parseJson.asJsObject.getFields("key") match {
-        case Seq(JsString(key)) => key
-        case _ => throw new Exception("Can not parse event key")
-      }
-    } else {
-      eve.subType
+    assert(eve.`type` == "pv" || eve.`type` == "ui")
+
+    import spray.json._
+    val param = if (eve.extraParameter.trim.isEmpty) "{}" else eve.extraParameter
+    param.parseJson.asJsObject.getFields("key") match {
+      case Seq(JsString(key)) => key
+      case _ =>
+        if (eve.`type` != "pv") logger.warn(s"event=can_not_parse_event_key event=$eve")
+        eve.subType
     }
   }
 
@@ -96,21 +96,11 @@ class DataWriter(appName: String) {
     }
   }
 
-  def putAggregations(appId: Int, hour: Int, aggs: Seq[AggregationRecord]) {
+  def putAggregations(appId: Int, openId: String, aggs: Seq[AggregationRecord]) {
     aggTable match {
       case Some(table) =>
         logger.debug(s"event=put_aggregations app_name=$appName app_id=${appId}")
-        table.putAggregations(appId, hour, aggs)
-      case None =>
-        logger.error(s"event=cannot_put_aggregations app_name=$appName")
-    }
-  }
-
-  def putAggregations(appId: Int, openId: String, dt: Int, aggs: Seq[AggregationRecord]) {
-    aggTable match {
-      case Some(table) =>
-        logger.debug(s"event=put_aggregations app_name=$appName app_id=${appId}")
-        table.putAggregations(appId, openId, dt, aggs)
+        table.putAggregations(appId, openId, aggs)
       case None =>
         logger.error(s"event=cannot_put_aggregations app_name=$appName")
     }
@@ -189,14 +179,8 @@ object DataWriter {
     getWriter(appName).putSessionState(iter)
   }
 
-  def writeAggregations(appName:String, appId: Int, hour: Int, records: Seq[AggregationRecord]) {
-    getWriter(appName).putAggregations(appId, hour, records)
-  }
-
-  def writeAggregations(
-                         appName:String, appId: Int, openId: String, date: Int, records: Seq[AggregationRecord]
-                       ) {
-    getWriter(appName).putAggregations(appId, openId, date, records)
+  def writeAggregations(appName:String, appId: Int, openId: String, records: Seq[AggregationRecord]) {
+    getWriter(appName).putAggregations(appId, openId, records)
   }
 
   def countRecordsAndNotify(appName: String, state: SessionState) = {

@@ -16,7 +16,7 @@ class RippleSchema(private val sp: StateProvider) extends AbstractSchema {
     builder.put("EVENTS", new EventScanTable(sp))
     builder.put("USERS", new UserScanTable(sp))
     builder.put("COUNTS", new CountScanTable(sp))
-    builder.put("AGGREGATIONS", new AggregationScanTable(sp))
+    builder.put("SESSION_AGGS", new SessionAggScanTable(sp))
     builder.build()
   }
 

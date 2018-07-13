@@ -87,8 +87,8 @@ message Session {
 
 message AggregationRecord {
   int32 app_id = 1;
-  int32 time_hour = 2;
-  string open_id = 3;
+  string open_id = 2;
+  int32 cst_date = 3;
 
   int32 sum_duration = 4;
   int32 sum_pageviews = 5;
@@ -97,21 +97,19 @@ message AggregationRecord {
   int32 sum_total = 8;
 
   int32 count_session = 9;
-  int64 max_starttime = 10;
+  int64 max_timestamp = 10;
 }
 
 message AggregationPack {
-  repeated int32 time_hour = 1;
-  repeated string open_id = 2;
+  repeated int32 cst_date = 1;
+  repeated int32 sum_duration = 2;
+  repeated int32 sum_pageviews = 3;
+  repeated int32 sum_sharings = 4;
+  repeated int32 sum_likes = 5;
+  repeated int32 sum_total = 6;
 
-  repeated int32 sum_duration = 3;
-  repeated int32 sum_pageviews = 4;
-  repeated int32 sum_sharings = 5;
-  repeated int32 sum_likes = 6;
-  repeated int32 sum_total = 7;
-
-  repeated int32 count_session = 8;
-  repeated int64 max_starttime = 9;
+  repeated int32 count_session = 7;
+  repeated int64 max_timestamp = 8;
 }
 
 message CountRecord {

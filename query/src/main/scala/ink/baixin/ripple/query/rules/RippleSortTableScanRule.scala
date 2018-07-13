@@ -6,6 +6,7 @@ import org.apache.calcite.rel.core.Sort
 import org.apache.calcite.rel.core.RelFactories
 import org.apache.calcite.tools.RelBuilderFactory
 import ink.baixin.ripple.query.rel.RippleTableScan
+
 import RelOptRule._
 
 class RippleSortTableScanRule(relBuilderFactory: RelBuilderFactory) extends RelOptRule(

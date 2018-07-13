@@ -17,6 +17,9 @@ class EventScanTable(private val sp: StateProvider) extends RippleTable {
 
   private lazy val table = sp.resolver.getFactTable.get
 
+  private val postMatcher = "postDetail\\?postId=\\d+".r.unanchored
+  private val productMatcher = "productDetail\\?productId=\\d+".r.unanchored
+
   override val fields = Seq(
     ("app_id", SqlTypeName.INTEGER),
     ("open_id", SqlTypeName.VARCHAR),
@@ -27,11 +30,13 @@ class EventScanTable(private val sp: StateProvider) extends RippleTable {
     ("parameter", SqlTypeName.BIGINT),
     ("extra_parameter", SqlTypeName.VARCHAR),
     ("repeat_times", SqlTypeName.INTEGER),
+    ("category", SqlTypeName.VARCHAR),
+    ("cst_date", SqlTypeName.DATE),
     ("timestamp", SqlTypeName.TIMESTAMP)
   )
 
   override val nullableFields =
-    Set("subtype", "parameter", "extra_parameter")
+    Set("subtype", "parameter", "extra_parameter", "category")
 
   override def getAttrs(fields: Seq[String]) = {
     if (fields.contains("open_id")) {
@@ -64,9 +69,22 @@ class EventScanTable(private val sp: StateProvider) extends RippleTable {
         event.extraParameter
       case "repeat_times" =>
         event.repeatTimes.asInstanceOf[java.lang.Integer]
+      case "category" =>
+        getCategory(event)
+      case "cst_date" =>
+        val hr = (session.timestamp / 3600 / 1000).toInt
+        ((hr + 8) / 24).asInstanceOf[java.lang.Integer]
       case "timestamp"  =>
         event.timestamp.asInstanceOf[java.lang.Long]
     }
+
+  private def getCategory(event: Session.Event) = {
+    (event.`type`, event.subType) match {
+      case ("pv", postMatcher(_*)) => "post"
+      case ("pv", productMatcher(_*)) => "product"
+      case _ => null
+    }
+  }
 
   private def performScan(ctx: DataContext, fields: Seq[String])(func: => Iterator[Session]) = {
     val cancelFlag: AtomicBoolean = DataContext.Variable.CANCEL_FLAG.get(ctx)

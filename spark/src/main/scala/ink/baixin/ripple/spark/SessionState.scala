@@ -3,6 +3,7 @@ package ink.baixin.ripple.spark
 import ink.baixin.ripple.core.models.{ Record, Session, User }
 
 case class SessionState(
+                         timestamp: Long = 0,
                          sessionId: Long = 0,
                          openId: String = "",
                          events: Seq[Record] = Seq(),
@@ -11,15 +12,20 @@ case class SessionState(
                        ) {
   def appId = events.head.appId
   def namespace = events.head.namespace
-  def timestamp = events.find {
-    e => (e.values.getOrElse("et", "") == "pv") || (e.values.getOrElse("et", "") == "pv")
-  } match {
-    case Some(e) => e.timestamp
-    case _ => 0L
-  }
+  def getTimestamp =
+    if (timestamp > 0) timestamp
+    else {
+      events.collect {
+        case e if (e.values.getOrElse("et", "") == "pv") || (e.values.getOrElse("et", "") == "ui") =>
+          e.timestamp
+      } match {
+        case s if !s.isEmpty => s.min
+        case _ => 0L
+      }
+    }
 
   def shouldEmit = (
-    (!openId.isEmpty) &&
+    (!openId.isEmpty) && (timestamp > 0) &&
       (events.find((e) => e.values.getOrElse("et", "") == "pv").isDefined ||
         events.find((e) => e.values.getOrElse("et", "") == "ui").isDefined))
 
@@ -91,17 +97,17 @@ case class SessionState(
     }
   }
 
-  private def getSessionAggregation = Some(
+  private def getSessionAggregation(eve: Seq[Session.Event]) = Some(
     Session.Aggregation(
-      ((events.last.timestamp - events.head.timestamp) / 1000).toInt,
-      events.count(e => e.values.getOrElse("et", "") == "pv"),
-      events.count(e =>
-        e.values.getOrElse("et", "") == "ui" && e.values.getOrElse("est", "").toLowerCase.startsWith("share")
+      ((events.last.timestamp - eve.head.timestamp) / 1000).toInt,
+      eve.count(_.`type` == "pv"),
+      eve.count(e =>
+        e.`type` == "ui" && e.subType.toLowerCase.startsWith("share")
       ),
-      events.count(e =>
-        e.values.getOrElse("et", "") == "ui" && e.values.getOrElse("est", "").toLowerCase.startsWith("like")
+      eve.count(e =>
+        e.`type` == "ui" && e.subType.toLowerCase.startsWith("like")
       ),
-      events.count(e => Seq("ui", "pv").contains(e.values.getOrElse("et", "")))
+      eve.size
     )
   )
 
@@ -119,7 +125,7 @@ case class SessionState(
     }
 
     val uis = evs.collect {
-      case (ts, "ui", est, epn, eep, cnt) =>
+      case (ts, "ui", est, epn, eep, cnt) if cnt > 0 =>
         Session.Event(ts, 0, "ui", est, epn, eep, cnt)
     }
 
@@ -127,23 +133,22 @@ case class SessionState(
       (res, tup) =>
         if (res.isEmpty) {
           tup match {
-            case (ts, et, est, epn, eep, cnt) if et == "pv" =>
+            case (ts, "pv", est, epn, eep, cnt) if cnt > 0 =>
               res :+ Session.Event(ts, 0, "pv", est, epn, eep, cnt)
             case _ => res
           }
         } else {
-          val dwellTime = (tup._1 - res.last.timestamp) / 1000
+          val dwellTime = {
+            val millis = (tup._1 - res.last.timestamp)
+            millis / 1000 + (if (millis % 1000 >= 500) 1 else 0)
+          }
           val nres =
             res.updated(res.length - 1, res.last.copy(dwellTime = dwellTime.toInt))
           tup match {
-            case (ts, "pv", est, epn, eep, cnt) =>
+            case (ts, "pv", est, epn, eep, cnt) if cnt > 0 =>
               // merge adjacent events if they are occuring in a short period
               // and having exactly the same parameter
-              if (ts - res.last.timestamp < 1000
-                && res.last.subType == est
-                && res.last.parameter == epn
-                && res.last.extraParameter == eep) nres
-              else nres :+ Session.Event(ts, 0, "pv", est, epn, eep, cnt)
+              nres :+ Session.Event(ts, 0, "pv", est, epn, eep, cnt)
             case _ => nres
           }
         }
@@ -161,15 +166,16 @@ case class SessionState(
     )
 
   def getSession = {
+    val eve = getSessionEvents
     Session(
       appId,
-      timestamp,
+      getTimestamp,
       sessionId,
       openId,
       getSessionEntrance,
-      getSessionAggregation,
+      getSessionAggregation(eve),
       getSessionGPSLocation,
-      getSessionEvents
+      eve
     )
   }
 }

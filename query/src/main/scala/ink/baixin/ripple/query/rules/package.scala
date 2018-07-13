@@ -7,7 +7,6 @@ package object rules {
     RippleFilterTableScanRule.INSTANCE,
     RippleProjectTableScanRule.INSTANCE,
     RippleJoinProjectTableScanRule.INSTANCE,
-    // RippleJoinFilterTranspose.INSTANCE,
     RippleSortTableScanRule.INSTANCE,
   )
 }

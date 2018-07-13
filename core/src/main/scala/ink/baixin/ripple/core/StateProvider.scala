@@ -22,6 +22,7 @@ import com.amazonaws.services.dynamodbv2.document.spec.GetItemSpec
 import com.amazonaws.services.dynamodbv2.document.spec.PutItemSpec
 import com.amazonaws.services.dynamodbv2.document.utils.ValueMap
 import com.amazonaws.services.dynamodbv2.util.TableUtils
+
 import state._
 
 class StateProvider(project: String, config: Config) {
@@ -43,8 +44,8 @@ class StateProvider(project: String, config: Config) {
       .withKeySchema(new KeySchemaElement("project_name", KeyType.HASH))
       .withProvisionedThroughput(
         new ProvisionedThroughput()
-          .withReadCapacityUnits(10)
-          .withWriteCapacityUnits(5)
+          .withReadCapacityUnits(10L)
+          .withWriteCapacityUnits(5L)
       )
       .withAttributeDefinitions(
         new AttributeDefinition("project_name", ScalarAttributeType.S)
@@ -182,8 +183,8 @@ class StateProvider(project: String, config: Config) {
       )
       .withProvisionedThroughput(
         new ProvisionedThroughput()
-          .withReadCapacityUnits(20)
-          .withWriteCapacityUnits(10)
+          .withReadCapacityUnits(20L)
+          .withWriteCapacityUnits(10L)
       )
 
     if (TableUtils.createTableIfNotExists(dynamodbClient, tableSpec)) {
@@ -208,8 +209,8 @@ class StateProvider(project: String, config: Config) {
       )
       .withProvisionedThroughput(
         new ProvisionedThroughput()
-          .withReadCapacityUnits(20)
-          .withWriteCapacityUnits(10)
+          .withReadCapacityUnits(20L)
+          .withWriteCapacityUnits(10L)
       )
 
     if (TableUtils.createTableIfNotExists(dynamodbClient, tableSpec)) {
@@ -249,8 +250,8 @@ class StateProvider(project: String, config: Config) {
       )
       .withProvisionedThroughput(
         new ProvisionedThroughput()
-          .withReadCapacityUnits(20)
-          .withWriteCapacityUnits(10)
+          .withReadCapacityUnits(20L)
+          .withWriteCapacityUnits(10L)
       )
 
     if (TableUtils.createTableIfNotExists(dynamodbClient, tableSpec)) {
@@ -281,17 +282,17 @@ class StateProvider(project: String, config: Config) {
     val tableSpec = (new CreateTableRequest())
       .withTableName(tableName)
       .withKeySchema(
-        new KeySchemaElement("pk", KeyType.HASH),
-        new KeySchemaElement("rid", KeyType.RANGE)
+        new KeySchemaElement("aid", KeyType.HASH),
+        new KeySchemaElement("oid", KeyType.RANGE)
       )
       .withAttributeDefinitions(
-        new AttributeDefinition("pk", ScalarAttributeType.N),
-        new AttributeDefinition("rid", ScalarAttributeType.S)
+        new AttributeDefinition("aid", ScalarAttributeType.N),
+        new AttributeDefinition("oid", ScalarAttributeType.S)
       )
       .withProvisionedThroughput(
         new ProvisionedThroughput()
-          .withReadCapacityUnits(20)
-          .withWriteCapacityUnits(10)
+          .withReadCapacityUnits(20L)
+          .withWriteCapacityUnits(10L)
       )
 
     if (TableUtils.createTableIfNotExists(dynamodbClient, tableSpec)) {
