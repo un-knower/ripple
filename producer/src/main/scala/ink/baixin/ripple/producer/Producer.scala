@@ -7,14 +7,14 @@ import io.netty.channel.socket.nio.NioServerSocketChannel
 
 object Producer {
   private val logger = Logger(this.getClass)
-
   private val region = System.getProperty("AWS_REGION", "cn-north-1")
   private val port = System.getProperty("LISTENING_PORT", "8080").toInt
 
   def main(args: Array[String]): Unit = {
     val writer = new KinesisEventWriter(region, 1000)
 
-    val bossGroup = new NioEventLoopGroup(2)
+    // if there are multiple `ServerBootstrap`, we should set more than one thread
+    val bossGroup = new NioEventLoopGroup(1)
     val workerGroup = new NioEventLoopGroup()
     try {
       val http = new ServerBootstrap()
@@ -26,8 +26,8 @@ object Producer {
       logger.info(s"event=start_server port=$port")
       f.closeFuture().sync()
     } finally {
-      bossGroup.shutdownGracefully();
-      workerGroup.shutdownGracefully();
+      bossGroup.shutdownGracefully()
+      workerGroup.shutdownGracefully()
     }
   }
 }

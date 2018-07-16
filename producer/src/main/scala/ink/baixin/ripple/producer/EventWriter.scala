@@ -34,7 +34,6 @@ class KinesisEventWriter(val region:String, val bufferTime: Long) extends EventW
     "unn", "uau", "ugd", "uct", "upn", "ucy", "ula", "uoid", // users
     "lgt", "lat", "lac" // location
   )
-  private val doubleKeys = Seq()
 
   private def getStringValue(map: java.util.Map[String, java.util.List[String]], key: String) = {
     if (map.containsKey(key)) {
@@ -51,10 +50,10 @@ class KinesisEventWriter(val region:String, val bufferTime: Long) extends EventW
 
   def putEvent(ts: Long, uri: String) {
     logger.debug(s"event=put_event timestamp=$ts uri=$uri")
-    val decorder = new QueryStringDecoder(uri)
+    val decoder = new QueryStringDecoder(uri)
 
-    if (namespaces.contains(decorder.path)) {
-      val parameters = decorder.parameters
+    if (namespaces.contains(decoder.path)) {
+      val parameters = decoder.parameters
       val pk = requiredKeys.map(k => getStringValue(parameters, k))
       if (pk.forall(v => !v.isEmpty)) {
         val values = valueKeys
@@ -63,12 +62,12 @@ class KinesisEventWriter(val region:String, val bufferTime: Long) extends EventW
           .toMap
 
         try {
-          val stream = getStream(decorder.path)
-          val rec = Record(ts, pk(0).toInt, pk(1), pk(2), 0, decorder.path, values)
+          val stream = getStream(decoder.path)
+          val rec = Record(ts, pk(0).toInt, pk(1), pk(2), 0, decoder.path, values)
           val key = s"${rec.appId}|${rec.clientId}|${rec.sessionId}"
           val data = java.nio.ByteBuffer.wrap(rec.toByteArray)
 
-          logger.debug(s"event=kinesis_add_user_record stream=$stream namespace=${decorder.path} key=$key")
+          logger.debug(s"event=kinesis_add_user_record stream=$stream namespace=${decoder.path} key=$key")
           kinesis.addUserRecord(stream, key, data)
         } catch {
           case e: Exception =>
