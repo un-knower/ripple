@@ -2,7 +2,7 @@ package ink.baixin.ripple.core
 
 import java.util.concurrent.TimeUnit
 import com.amazonaws.services.dynamodbv2.document.Table
-import com.google.common.cache.{ LoadingCache, CacheLoader, CacheBuilder }
+import com.google.common.cache._
 import state._
 import documents._
 
@@ -15,6 +15,7 @@ trait ResourceResolver {
   protected def getCountTableDelegate(name: String): Table
   protected def getAggregationTableDelegate(name: String): Table
 
+  // get cache from guava's `LoadingCache`
   private val tableCache: LoadingCache[String, Option[Any]] = {
     CacheBuilder
       .newBuilder()

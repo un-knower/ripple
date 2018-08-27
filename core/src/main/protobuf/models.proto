@@ -112,6 +112,22 @@ message AggregationPack {
   repeated int64 max_timestamp = 8;
 }
 
+message TopItemRecord {
+  int32 app_id = 1;
+  string open_id = 2;
+  int32 item_id = 3;
+  int32 cst_date = 4;
+  int32 dwell_time = 5;
+  int32 visit_times = 6;
+}
+
+message TopItemPack {
+  repeated int32 item_id = 1;
+  repeated int32 cst_date = 2;
+  repeated int32 dwell_time = 3;
+  repeated int32 visit_times = 4;
+}
+
 message CountRecord {
   int32 app_id = 1;
   string open_id = 2;

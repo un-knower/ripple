@@ -1,32 +1,21 @@
 package ink.baixin.ripple.core
 
-import scala.util.{ Try, Success, Failure}
+import scala.util.{Failure, Success, Try}
 import java.util.concurrent.atomic.AtomicReference
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.Logger
 import com.amazonaws.regions.Regions
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder
-import com.amazonaws.services.dynamodbv2.model.KeyType
-import com.amazonaws.services.dynamodbv2.model.KeySchemaElement
-import com.amazonaws.services.dynamodbv2.model.CreateTableRequest
-import com.amazonaws.services.dynamodbv2.model.UpdateTimeToLiveRequest
-import com.amazonaws.services.dynamodbv2.model.AttributeDefinition
-import com.amazonaws.services.dynamodbv2.model.ScalarAttributeType
-import com.amazonaws.services.dynamodbv2.model.ProvisionedThroughput
-import com.amazonaws.services.dynamodbv2.model.TimeToLiveSpecification
-import com.amazonaws.services.dynamodbv2.model.AmazonDynamoDBException
-import com.amazonaws.services.dynamodbv2.document.Item
-import com.amazonaws.services.dynamodbv2.document.Table
-import com.amazonaws.services.dynamodbv2.document.DynamoDB
-import com.amazonaws.services.dynamodbv2.document.spec.GetItemSpec
-import com.amazonaws.services.dynamodbv2.document.spec.PutItemSpec
+import com.amazonaws.services.dynamodbv2.model._
+import com.amazonaws.services.dynamodbv2.document._
+import com.amazonaws.services.dynamodbv2.document.spec._
 import com.amazonaws.services.dynamodbv2.document.utils.ValueMap
 import com.amazonaws.services.dynamodbv2.util.TableUtils
-
 import state._
 
 class StateProvider(project: String, config: Config) {
   private val logger = Logger(this.getClass.getName)
+  // use `AtomicReference` to insure atomic of state
   private val stateRef = new AtomicReference[(Long, Option[State])]((0, None))
   private val randomGen = new scala.util.Random()
 
@@ -36,31 +25,41 @@ class StateProvider(project: String, config: Config) {
       .build()
   }
 
+  // the table to preserve metadata in DynamoDB
   private lazy val metadataTable = {
     val tableName = config.getString("metadata-table")
 
     val tableSpec = (new CreateTableRequest())
       .withTableName(tableName)
+      // set `project_name` as key schema, this is the partition key of the table
       .withKeySchema(new KeySchemaElement("project_name", KeyType.HASH))
       .withProvisionedThroughput(
+        // set read and write time per second
         new ProvisionedThroughput()
-          .withReadCapacityUnits(10L)
-          .withWriteCapacityUnits(5L)
+          .withReadCapacityUnits(10)
+          .withWriteCapacityUnits(5)
       )
+      // set the table attribute's name and type
       .withAttributeDefinitions(
-        new AttributeDefinition("project_name", ScalarAttributeType.S)
-      )
+      new AttributeDefinition("project_name", ScalarAttributeType.S)
+    )
 
     if (TableUtils.createTableIfNotExists(dynamodbClient, tableSpec)) {
       logger.info(s"event=created_metadata_table name=$tableName")
     }
     // wait for the table to be ready, at most for 300 seconds and check once per 5 seconds
     logger.debug(s"event=wait_metadata_table_active name=$tableName")
-    TableUtils.waitUntilActive(dynamodbClient, tableName, 3000000, 5000)
+    TableUtils.waitUntilActive(dynamodbClient, tableName, 300000, 5000)
 
     (new DynamoDB(dynamodbClient)).getTable(tableName)
   }
 
+  /**
+    * Common function to update and get state atomically, use `stateRef.updateAndGet` as the parameter of `func`
+    *
+    * @param func
+    * @return
+    */
   private def compatUpdateAndGet(func: ((Long, Option[State])) => (Long, Option[State])) = {
     // for compatibility in scala 2.11
     import java.util.function.UnaryOperator
@@ -78,7 +77,7 @@ class StateProvider(project: String, config: Config) {
           .withConsistentRead(true)
       )
     ) match {
-      case Success(item: Item) =>
+      case Success(item: Item) => // get item from the table
         val id = item.getLong("id")
         val binary = item.getBinary("state")
         logger.debug(s"event=fetched_state project=$project id=$id")
@@ -89,17 +88,20 @@ class StateProvider(project: String, config: Config) {
         } else {
           (id, newState)
         }
-      case Success(_) =>
+      case Success(_) => // table exists but have no items
         old // empty state, return old
-      case Failure(e) =>
+      case Failure(e) => // get item fail
         logger.error(s"event=fetch_state_failure error=$e")
-        Thread.sleep(randomGen.nextInt(2000) + 2000) // randomly sleep for a while
+        // If failed, DynamoDB will retry, so first randomly sleep for a while then retry
+        // to prevent read DynamoDB too frequently.
+        Thread.sleep(randomGen.nextInt(2000) + 2000)
         // if sync failed, just return old state
         old
     }
   }
 
   private def updateState(uf: (Option[State]) => Option[State]): (Long, Option[State]) = {
+    // retry at most 20 times
     var retries = 20
     while (retries > 0) {
       try {
@@ -133,6 +135,7 @@ class StateProvider(project: String, config: Config) {
       val spec = if (oldState.isEmpty) {
         new PutItemSpec()
           .withItem(item)
+          // make sure DynamoDB doesn't have this record
           .withConditionExpression("attribute_not_exists(project_name)")
       } else {
         new PutItemSpec()
@@ -183,8 +186,8 @@ class StateProvider(project: String, config: Config) {
       )
       .withProvisionedThroughput(
         new ProvisionedThroughput()
-          .withReadCapacityUnits(20L)
-          .withWriteCapacityUnits(10L)
+          .withReadCapacityUnits(20)
+          .withWriteCapacityUnits(10)
       )
 
     if (TableUtils.createTableIfNotExists(dynamodbClient, tableSpec)) {
@@ -192,7 +195,7 @@ class StateProvider(project: String, config: Config) {
     }
     // wait for the table to be ready, at most for 300 seconds and check once per 5 seconds
     logger.debug(s"event=wait_user_table_active name=$tableName")
-    TableUtils.waitUntilActive(dynamodbClient, tableName, 3000000, 5000)
+    TableUtils.waitUntilActive(dynamodbClient, tableName, 300000, 5000)
     (new DynamoDB(dynamodbClient)).getTable(tableName)
   }
 
@@ -200,7 +203,9 @@ class StateProvider(project: String, config: Config) {
     val tableSpec = (new CreateTableRequest())
       .withTableName(tableName)
       .withKeySchema(
+        // store primary partition key on DynamoDB with HASH type
         new KeySchemaElement("aid", KeyType.HASH),
+        // store primary sort key on DynamoDB with RANGE type
         new KeySchemaElement("sid", KeyType.RANGE)
       )
       .withAttributeDefinitions(
@@ -209,8 +214,8 @@ class StateProvider(project: String, config: Config) {
       )
       .withProvisionedThroughput(
         new ProvisionedThroughput()
-          .withReadCapacityUnits(20L)
-          .withWriteCapacityUnits(10L)
+          .withReadCapacityUnits(20)
+          .withWriteCapacityUnits(10)
       )
 
     if (TableUtils.createTableIfNotExists(dynamodbClient, tableSpec)) {
@@ -218,8 +223,10 @@ class StateProvider(project: String, config: Config) {
     }
     // wait for the table to be ready, at most for 300 seconds and check once per 5 seconds
     logger.debug(s"event=wait_fact_table_active name=$tableName")
-    TableUtils.waitUntilActive(dynamodbClient, tableName, 3000000, 5000)
+    TableUtils.waitUntilActive(dynamodbClient, tableName, 300000, 5000)
 
+    // make DynamoDB's `Time to live attribute` enabled, after set this attribute,
+    // there will exists a field in table to store the ttl timestamp
     try {
       val ttlSpec = new TimeToLiveSpecification()
         .withEnabled(true)
@@ -250,8 +257,8 @@ class StateProvider(project: String, config: Config) {
       )
       .withProvisionedThroughput(
         new ProvisionedThroughput()
-          .withReadCapacityUnits(20L)
-          .withWriteCapacityUnits(10L)
+          .withReadCapacityUnits(20)
+          .withWriteCapacityUnits(10)
       )
 
     if (TableUtils.createTableIfNotExists(dynamodbClient, tableSpec)) {
@@ -259,7 +266,7 @@ class StateProvider(project: String, config: Config) {
     }
     // wait for the table to be ready, at most for 300 seconds and check once per 5 seconds
     logger.debug(s"event=wait_count_table_active name=$tableName")
-    TableUtils.waitUntilActive(dynamodbClient, tableName, 3000000, 5000)
+    TableUtils.waitUntilActive(dynamodbClient, tableName, 300000, 5000)
 
     try {
       val ttlSpec = new TimeToLiveSpecification()
@@ -291,8 +298,8 @@ class StateProvider(project: String, config: Config) {
       )
       .withProvisionedThroughput(
         new ProvisionedThroughput()
-          .withReadCapacityUnits(20L)
-          .withWriteCapacityUnits(10L)
+          .withReadCapacityUnits(20)
+          .withWriteCapacityUnits(10)
       )
 
     if (TableUtils.createTableIfNotExists(dynamodbClient, tableSpec)) {
@@ -300,7 +307,7 @@ class StateProvider(project: String, config: Config) {
     }
     // wait for the table to be ready, at most for 300 seconds and check once per 5 seconds
     logger.debug(s"event=wait_aggregation_table_active name=$tableName")
-    TableUtils.waitUntilActive(dynamodbClient, tableName, 3000000, 5000)
+    TableUtils.waitUntilActive(dynamodbClient, tableName, 300000, 5000)
 
     try {
       val ttlSpec = new TimeToLiveSpecification()
@@ -321,8 +328,10 @@ class StateProvider(project: String, config: Config) {
 
 
   def ensureState = {
+    // get state from DynamoDB
     syncState
-    updateState {(old) =>
+    // update state to DynamoDB
+    updateState { (old) =>
       old match {
         case None => Some(getNewState)
         case _ => old
@@ -333,6 +342,7 @@ class StateProvider(project: String, config: Config) {
 
   lazy val listener = new StateListener() {
     override def getState = stateRef.get._2
+
     override def syncAndGetState = syncState._2
   }
 
@@ -348,10 +358,15 @@ class StateProvider(project: String, config: Config) {
 
   lazy val resolver = new ResourceResolver() {
     override def getStateDelegate = stateRef.get._2
+
     override def syncAndGetStateDelegate = syncState._2
+
     override def getFactTableDelegate(name: String): Table = ensureFactTable(name).get
+
     override def getUserTableDelegate(name: String): Table = ensureUserTable(name).get
+
     override def getCountTableDelegate(name: String): Table = ensureCountTable(name).get
+
     override def getAggregationTableDelegate(name: String): Table = ensureAggregationTable(name).get
   }
 }

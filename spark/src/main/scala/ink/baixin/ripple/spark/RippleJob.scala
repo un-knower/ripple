@@ -9,7 +9,7 @@ object RippleJob {
 
   def initState(appName: String) = {
     logger.info(s"event=init_state_tasks")
-    val config = ConfigFactory.load().getConfig("ripple")
+    val config = ConfigFactory.load.getConfig("ripple")
     val sp = new StateProvider(appName, config)
     sp.ensureState
 
@@ -23,6 +23,8 @@ object RippleJob {
   }
 
   def main(args: Array[String]) {
+    // use `scopt` to parse command line options
+    // see `https://github.com/scopt/scopt` for more detail
     val option = RippleJobOptionParser.parse(args, RippleJobOption()).get
     val sp = initState(option.appName)
     option.taskCategory match {

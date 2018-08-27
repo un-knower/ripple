@@ -1,10 +1,8 @@
 package ink.baixin.ripple.query.schema
 
 import com.google.common.collect.ImmutableMap
-
 import org.apache.calcite.schema.Table
 import org.apache.calcite.schema.impl.AbstractSchema
-
 import ink.baixin.ripple.core.StateProvider
 import ink.baixin.ripple.query.tables._
 

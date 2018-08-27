@@ -1,9 +1,21 @@
 package ink.baixin.ripple.spark
 
-import ink.baixin.ripple.core.models.{ Record, Session, User }
+import ink.baixin.ripple.core.models._
+
+object SessionState {
+  def makeOpenRecord(record: Record) =
+    record.copy(
+      timestamp = record.timestamp - 1,
+      values = Map(
+        "et" -> "ui",
+        "est" -> "enterApp",
+        "epn" -> record.appId.toString,
+        "eep" -> s"""{"key":"enterApp${record.appId}"}"""
+      )
+    )
+}
 
 case class SessionState(
-                         timestamp: Long = 0,
                          sessionId: Long = 0,
                          openId: String = "",
                          events: Seq[Record] = Seq(),
@@ -12,22 +24,8 @@ case class SessionState(
                        ) {
   def appId = events.head.appId
   def namespace = events.head.namespace
-  def getTimestamp =
-    if (timestamp > 0) timestamp
-    else {
-      events.collect {
-        case e if (e.values.getOrElse("et", "") == "pv") || (e.values.getOrElse("et", "") == "ui") =>
-          e.timestamp
-      } match {
-        case s if !s.isEmpty => s.min
-        case _ => 0L
-      }
-    }
-
-  def shouldEmit = (
-    (!openId.isEmpty) && (timestamp > 0) &&
-      (events.find((e) => e.values.getOrElse("et", "") == "pv").isDefined ||
-        events.find((e) => e.values.getOrElse("et", "") == "ui").isDefined))
+  def timestamp = events.head.timestamp
+  def shouldEmit = !openId.isEmpty
 
   private def getUserProfile = {
     events.find((rec) => rec.values.contains("unn")).map {
@@ -99,7 +97,7 @@ case class SessionState(
 
   private def getSessionAggregation(eve: Seq[Session.Event]) = Some(
     Session.Aggregation(
-      ((events.last.timestamp - eve.head.timestamp) / 1000).toInt,
+      ((events.last.timestamp - events.head.timestamp) / 1000).toInt,
       eve.count(_.`type` == "pv"),
       eve.count(e =>
         e.`type` == "ui" && e.subType.toLowerCase.startsWith("share")
@@ -111,6 +109,11 @@ case class SessionState(
     )
   )
 
+  /**
+    * Get `ui` and `pv` events respectively, then merge them and sort by time
+    * and add `leaveApp` ui event if this session has been closed
+    * @return
+    */
   def getSessionEvents = {
     val evs = events.map {
       (event) =>
@@ -138,6 +141,9 @@ case class SessionState(
             case _ => res
           }
         } else {
+          // for `pv` event, you must calculate its dwell time
+          // for pv event except for last pv event, dwell time = this pv timestamp - last pv timestamp
+          // for last pv event, dwell time = last event timestamp - last pv timestamp
           val dwellTime = {
             val millis = (tup._1 - res.last.timestamp)
             millis / 1000 + (if (millis % 1000 >= 500) 1 else 0)
@@ -146,15 +152,26 @@ case class SessionState(
             res.updated(res.length - 1, res.last.copy(dwellTime = dwellTime.toInt))
           tup match {
             case (ts, "pv", est, epn, eep, cnt) if cnt > 0 =>
-              // merge adjacent events if they are occuring in a short period
-              // and having exactly the same parameter
               nres :+ Session.Event(ts, 0, "pv", est, epn, eep, cnt)
             case _ => nres
           }
         }
     }
 
-    (pvs ++ uis).sortBy(_.timestamp)
+    val res = (pvs ++ uis).sortBy(_.timestamp)
+    if (!res.isEmpty && res.head.subType == "enterApp" && closed) {
+      // make a closeMiniProgram event
+      val closeEvent = Session.Event(
+        events.last.timestamp + 1,
+        ((events.last.timestamp - events.head.timestamp) / 1000).toInt,
+        "ui", "leaveApp", appId.toString,
+        s"""{"key":"leaveApp${appId}"}""",
+        res.head.repeatTimes
+      )
+      res :+ closeEvent
+    } else {
+      res
+    }
   }
 
   def getUser =
@@ -169,7 +186,7 @@ case class SessionState(
     val eve = getSessionEvents
     Session(
       appId,
-      getTimestamp,
+      timestamp,
       sessionId,
       openId,
       getSessionEntrance,

@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package ink.baixin.ripple.core;
 
+// we don't use `reserved_id` and `segments` actually, they are over-designed.
 message State {
   string project = 1;
   string timezone = 2;

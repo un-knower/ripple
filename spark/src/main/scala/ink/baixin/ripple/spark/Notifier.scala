@@ -2,29 +2,19 @@ package ink.baixin.ripple.spark
 
 import scala.util.Try
 import io.netty.bootstrap.Bootstrap
-import io.netty.channel.ChannelInitializer
-import io.netty.channel.ChannelHandlerContext
-import io.netty.channel.SimpleChannelInboundHandler
+import io.netty.channel._
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
-import io.netty.handler.codec.http.HttpClientCodec
-import io.netty.handler.codec.http.DefaultFullHttpRequest
+import io.netty.handler.codec.http._
 import io.netty.channel.socket.nio.NioSocketChannel
-import io.netty.handler.codec.http.HttpObject
-import io.netty.handler.codec.http.HttpMethod
-import io.netty.handler.codec.http.HttpVersion
-import io.netty.handler.codec.http.HttpResponse
-import io.netty.handler.codec.http.HttpHeaderNames
-import io.netty.handler.codec.http.HttpHeaderValues
-import io.netty.handler.codec.http.HttpResponseStatus
 import io.netty.handler.ssl.SslContext
 import io.netty.handler.ssl.SslContextBuilder
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory
-import ink.baixin.ripple.core.models.Session
 import spray.json._
 import com.typesafe.scalalogging.Logger
 import java.net.URI
 import java.util.Date
+import ink.baixin.ripple.core.models.Session
 
 object Notifier {
   final case class Event(
@@ -46,7 +36,7 @@ object Notifier {
 
       private val df = {
         val tz = TimeZone.getTimeZone("UTC")
-        val format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm'Z'")
+        val format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
         format.setTimeZone(tz)
         format
       }

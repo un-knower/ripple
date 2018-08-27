@@ -90,16 +90,16 @@ class RippleQueryServer(project: String, listenPort: Int) extends Directives wit
       }
       val rows = scala.collection.mutable.ListBuffer[Seq[String]]()
       while (result.next()) {
-        val row = (for (i <- 1 to cols) yield {
+        val row = for (i <- 1 to cols) yield {
           val v = result.getObject(i)
           if (v == null) ""
           else v.toString
-        })
-        rows.append(row.toSeq)
+        }
+        rows.append(row)
       }
       val timeCost = (System.nanoTime - start) / 1000000
       logger.info(s"event=query_finished project=${query.project} sql='${escapedSql}' time_cost=${timeCost} rows=${rows.size}")
-      Result(project, false, "", timeCost, colMeta.toSeq, rows.toSeq)
+      Result(project, false, "", timeCost, colMeta, rows)
     } catch {
       case e: Throwable =>
         val timeCost = (System.nanoTime - start) / 1000000
