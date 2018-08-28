@@ -1,4 +1,5 @@
 lazy val core = (project in file("core"))
+lazy val scheduler = (project in file("scheduler"))
 lazy val query = (project in file("query"))
 lazy val producer = (project in file("producer")).dependsOn(core)
 lazy val spark = (project in file("spark")).dependsOn(core)
