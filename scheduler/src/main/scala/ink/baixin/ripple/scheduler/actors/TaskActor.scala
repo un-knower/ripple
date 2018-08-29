@@ -1,4 +1,4 @@
-package ink.baixin.ripple.scheduler.actor
+package ink.baixin.ripple.scheduler.actors
 
 import akka.actor.Actor
 import com.typesafe.scalalogging.Logger

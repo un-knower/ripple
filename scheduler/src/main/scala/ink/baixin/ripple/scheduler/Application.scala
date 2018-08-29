@@ -3,7 +3,7 @@ package ink.baixin.ripple.scheduler
 import akka.actor.Props
 import akka.routing.FromConfig
 import com.typesafe.scalalogging.Logger
-import ink.baixin.ripple.scheduler.actor.{ControlActor, DispatchActor, TaskActor}
+import ink.baixin.ripple.scheduler.actors.{ControlActor, DispatchActor, TaskActor}
 
 object Application {
 
@@ -21,6 +21,7 @@ object Application {
   )
 
   def main(args: Array[String]): Unit = {
+    controlActor ! ControlActor.Recover // recover from DynamoDB  before any new tasks start
 
   }
 
