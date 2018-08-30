@@ -7,6 +7,9 @@ object NotificationService {
   import Events._
   import ActorContext._
 
+  def subscribe(actor: ActorRef, channel: Class[_]) =
+    actorSystem.eventStream.subscribe(actor, channel)
+
   def publish(event: Event) =
     actorSystem.eventStream.publish(event)
 

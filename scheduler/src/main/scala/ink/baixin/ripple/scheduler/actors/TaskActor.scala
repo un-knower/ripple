@@ -18,4 +18,9 @@ class TaskActor extends Actor {
     logger.info(s"event=task_actor_restart actor=${self.path} reason=${reason}")
   }
 
+  override def receive: Receive = {
+    case m =>
+      logger.warn(s"event=task_actor_unrecognized_message actor=${self.path} message=$m")
+  }
+
 }

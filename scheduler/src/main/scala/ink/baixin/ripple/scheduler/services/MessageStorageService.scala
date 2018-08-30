@@ -11,13 +11,14 @@ object MessageStorageService extends DefaultJsonProtocol {
 
   implicit val messageJsonFormat = jsonFormat4(TaskMessage)
 
-  lazy val storage = DynamoDB.at(AWSConfig.region)
+  lazy implicit val storage = DynamoDB.at(AWSConfig.region)
 
   lazy val table = ensureTable
 
   def ensureTable: Table = {
     storage.table(MessageStorageConfig.table) match {
-      case Some(table) => table
+      case Some(table) =>
+        table
       case None =>
         logger.info("event=message_storage_service_create_table")
         storage.createTable(
@@ -57,8 +58,7 @@ object MessageStorageService extends DefaultJsonProtocol {
     )
   }
 
-  def init(msg: TaskMessage) = {
-    put("init", msg)
-  }
+  def init(msg: TaskMessage) = put("init", msg)
 
+  def delete(msg: TaskMessage) = table.delete(msg.uid)
 }
