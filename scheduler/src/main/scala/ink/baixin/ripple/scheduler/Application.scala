@@ -7,10 +7,12 @@ import ink.baixin.ripple.scheduler.actors.ControlActor.{CleanUp, LazyTask}
 import ink.baixin.ripple.scheduler.actors.{ControlActor, DispatchActor, TaskActor}
 import ink.baixin.ripple.scheduler.utils.Timer
 import ink.baixin.ripple.scheduler.utils.Timer.{Daily, Every, Hourly, Weekly}
+
 import scala.concurrent.{Await, TimeoutException}
 import scala.concurrent.duration._
 
 object Application {
+
   import ActorContext._
 
   private val logger = Logger(this.getClass)
@@ -74,7 +76,7 @@ object Application {
       Weekly((6 days) + (2 hours), LazyTask("kylin_hbase_table_cleanup"))
     )
 
-    Timer.schedule(wmpDataRefresh, dataRefresh, cubeMaintenance, dimeJobs, systemMaintenance)
+    Timer.schedule(wmpDataRefresh ++ dataRefresh ++ cubeMaintenance ++ dimeJobs ++ systemMaintenance: _*)
   }
 
   def terminate = {

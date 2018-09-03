@@ -9,7 +9,7 @@ import spray.json._
 object MessageStorageService extends DefaultJsonProtocol {
   private val logger = Logger(this.getClass)
 
-  implicit val messageJsonFormat = jsonFormat4(TaskMessage)
+  implicit val messageJsonFormat = jsonFormat4(TaskMessage.apply)
 
   lazy implicit val storage = DynamoDB.at(AWSConfig.region)
 

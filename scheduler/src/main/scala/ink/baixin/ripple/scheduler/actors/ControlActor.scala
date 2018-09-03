@@ -16,6 +16,8 @@ class ControlActor(target: String) extends Actor {
     case ControlActor.Task(msg) => pipe(msg)
     case ControlActor.LazyTask(name, key, data) =>
       pipe(TaskMessage.create(name, key, data ++ Map("now" -> DateTime.now.toString)))
+    case m =>
+      logger.warn(s"event=control_actor_unsupported_message message=$m")
   }
 
   /**
@@ -67,7 +69,6 @@ class ControlActor(target: String) extends Actor {
 }
 
 object ControlActor {
-  case object Reset
   case object Recover
   case object CleanUp
 

@@ -1,7 +1,6 @@
 package ink.baixin.ripple.scheduler
 
 import java.util.UUID
-
 import akka.routing.ConsistentHashingRouter.ConsistentHashable
 
 case class TaskMessage(
@@ -16,6 +15,9 @@ case class TaskMessage(
 }
 
 object TaskMessage {
+  def apply(uid: String, name: String, hashKey: String, data: Map[String, String]) =
+    new TaskMessage(uid, name, hashKey, data)
+
   def create(name: String, hashKey: String, data: Map[String, String]) =
     new TaskMessage(UUID.randomUUID().toString, name, hashKey, data)
 }

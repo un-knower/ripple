@@ -1,12 +1,21 @@
-package ink.baixin.ripple.scheduler.utils
+package ink.baixin.ripple.scheduler
+package utils
 
 import akka.actor.{ActorRef, ActorSystem}
-import ink.baixin.ripple.scheduler.utils.Timer.TimerInterval
 import org.joda.time.{DateTime, DateTimeZone, Interval}
 import scala.concurrent.duration._
 import scala.concurrent.duration.FiniteDuration
 
-class Timer(system: ActorSystem, actor: ActorRef, schemes: TimerInterval*) {
+class Timer(system: ActorSystem, actor: ActorRef, schemes: Seq[Timer.TimerInterval]) {
+  import system.dispatcher
+
+  val cancelHandlers = schemes.map {
+    case Timer.Every(delay, freq, message) => scheduleEvery(delay, freq, message)
+    case Timer.Hourly(delay, message) => scheduleHourly(delay, message)
+    case Timer.Daily(delay, message) => scheduleDaily(delay, message)
+    case Timer.Weekly(delay, message) => scheduleWeekly(delay, message)
+    case _ => throw new UnsupportedOperationException()
+  }
 
   def scheduleEvery(delay: FiniteDuration, freq: FiniteDuration, message: AnyRef) =
     system.scheduler.schedule(delay, freq, actor, message)
@@ -41,7 +50,7 @@ class Timer(system: ActorSystem, actor: ActorRef, schemes: TimerInterval*) {
     val now = DateTime.now(DateTimeZone.UTC)
     val today = now.withTimeAtStartOfDay()
     val thisSunday = today.minusDays(today.getDayOfWeek % 7)
-    val nextTick = thisSunday.plusWeeks(delay.toMillis)
+    val nextTick = thisSunday.plus(delay.toMillis)
 
     val initialDelay = if (nextTick.isAfter(now)) {
       new Interval(now, nextTick)
