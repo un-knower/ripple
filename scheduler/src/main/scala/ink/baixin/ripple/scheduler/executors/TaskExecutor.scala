@@ -18,5 +18,5 @@ trait TaskExecutor {
     logger.info(s"$this actor=${actorRef.path} event=finish message=$msg")
   }
 
-  def execute(message: TaskMessage) = throw new UnsupportedOperationException()
+  def execute(msg: TaskMessage) = throw new UnsupportedOperationException()
 }

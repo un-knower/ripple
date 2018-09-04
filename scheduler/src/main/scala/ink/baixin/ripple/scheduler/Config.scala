@@ -46,3 +46,17 @@ object TaskConfig extends BaseConfig("task") {
   val kylinCubes = raw.getStringList("kylin_cubes").asScala
   val kylinProject = raw.getString("kylin_project")
 }
+
+object HadoopConfig extends BaseConfig("hadoop") {
+  val user = raw.getString("user")
+  val defaultFS = raw.getString("default_fs")
+  val yarnRNAddress = raw.getString("yarn_rn_address")
+}
+
+object SparkConfig extends BaseConfig("spark") {
+  val eventLogEnabled = raw.getString("eventlog_enabled")
+  val eventLogDir = raw.getString("eventlog_dir")
+  val historyDir = raw.getString("history_dir")
+  val appJar = raw.getString("app_jar")
+  val sparkLibsArchive = raw.getString("spark_libs_archive")
+}

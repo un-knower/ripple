@@ -62,7 +62,7 @@ object Application {
             Map("project" -> TaskConfig.kylinProject, "cube" -> cube)))
     }
 
-    val dimeJobs = Seq(Daily(18 hours, LazyTask("dime_data_refresh")))
+    val rippleJobs = Seq(Daily(18 hours, LazyTask("ripple_data_refresh")))
 
     // system maintenance tasks are all blocking
     val systemMaintenance = Seq(
@@ -76,7 +76,7 @@ object Application {
       Weekly((6 days) + (2 hours), LazyTask("kylin_hbase_table_cleanup"))
     )
 
-    Timer.schedule(wmpDataRefresh ++ dataRefresh ++ cubeMaintenance ++ dimeJobs ++ systemMaintenance: _*)
+    Timer.schedule(wmpDataRefresh ++ dataRefresh ++ cubeMaintenance ++ rippleJobs ++ systemMaintenance: _*)
   }
 
   def terminate = {
