@@ -127,9 +127,41 @@ class DispatchActor(fastTarget: String, slowTarget: String) extends Actor {
       taskQueue.remove(msg)
       keyAssigned.put("", System.nanoTime())
     } else {
-      keyPriority.toSeq.sortBy()
+      keyPriority.toSeq.sortBy(_._2).reverse.collect {
+        case (key, _) if !keyAssigned.contains(key) =>
+          getTask(key) match {
+            case Some(msg) =>
+              logger.info(s"actor=dispatch event=forward_task task=$msg")
+              selectActor(msg) ! msg
+              keyAssigned.put(key, System.nanoTime())
+              keyPriority.put(key, keyPriority(key) >> 1)
+            case None =>
+              keyPriority.put(key, 0)
+          }
+      }
     }
+  }
 
+  def getTask(key: String): Option[TaskMessage] = {
+    for (msg <- taskQueue) {
+      if (msg.hashKey.isEmpty) return None
+      if (msg.hashKey == key) return Some(msg)
+    }
+    return None
+  }
+
+  def selectActor(msg: TaskMessage) = {
+    val estimateTime = metrics.getOrElse(
+      (msg.hashKey, msg.name),
+      random.nextInt((15 minutes).toMillis.toInt).toLong
+    )
+    if (estimateTime >= slowValue) {
+      logger.debug(s"actor=dispatch event=assign_slow_actor est_time=$estimateTime msg=$msg")
+      slowTargetActor
+    } else {
+      logger.debug(s"actor=dispatch event=assign_fast_actor est_time=$estimateTime msg=$msg")
+      fastTargetActor
+    }
   }
 
 }

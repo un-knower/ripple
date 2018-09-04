@@ -61,7 +61,6 @@ class ControlActor(target: String) extends Actor {
     logger.debug(s"event=control_actor_init_message message=$msg")
     // update message's timestamp before starting
     MessageStorageService.init(msg)
-    NotificationService.taskScheduled(msg, self)
     NotificationService.taskStatusUpdated(msg, "init", self)
     logger.debug(s"event=control_actor_pass_message message=$msg")
     targetActor ! msg

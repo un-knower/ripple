@@ -61,4 +61,12 @@ object MessageStorageService extends DefaultJsonProtocol {
   def init(msg: TaskMessage) = put("init", msg)
 
   def delete(msg: TaskMessage) = table.delete(msg.uid)
+
+  def running(msg: TaskMessage) = put("running", msg)
+
+  def finish(msg: TaskMessage) = put("finish", msg)
+
+  def error(msg: TaskMessage) = put("error", msg)
+
+  def abort(msg: TaskMessage) = put("abort", msg)
 }

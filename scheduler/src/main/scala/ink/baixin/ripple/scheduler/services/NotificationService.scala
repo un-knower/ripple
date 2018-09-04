@@ -19,9 +19,6 @@ object NotificationService {
   def unsubscribe(actor: ActorRef, channel: Class[_]) =
     actorSystem.eventStream.unsubscribe(actor, channel)
 
-  def taskScheduled(task: TaskMessage, trigger: ActorRef = ActorRef.noSender) =
-    publish(TaskScheduled(task, trigger))
-
   def taskStatusUpdated(task: TaskMessage, status: String, trigger: ActorRef = ActorRef.noSender) =
     publish(TaskStatusUpdated(task, status, trigger))
 
