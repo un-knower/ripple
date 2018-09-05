@@ -64,7 +64,7 @@ class TaskActor extends Actor {
       NotificationService.taskStatusUpdated(msg, "error", self)
       NotificationService.taskExecutionFailed(msg, Right(err), self)
       logger.error(s"event=task_actor_execute_failure actor=${self.path} message=$msg reason=$err")
-      logger.error(err.getStackTrace)
+      logger.error(err.getStackTrace.toString)
     }
   }
 }

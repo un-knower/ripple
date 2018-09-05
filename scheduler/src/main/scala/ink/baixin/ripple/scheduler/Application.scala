@@ -33,6 +33,12 @@ object Application {
     sys.addShutdownHook(terminate)
   }
 
+  /**
+    * Other actor submit task by this method
+    * @param task
+    */
+  def submit(task: TaskMessage) = controlActor ! ControlActor.Task(task)
+
   def scheduleTasks = {
     // Schedule wmp_data_build every day
     // This task will refresh all 90 days data

@@ -24,4 +24,10 @@ object NotificationService {
 
   def taskExecutionFailed(task: TaskMessage, error: Either[String, Throwable], trigger: ActorRef = ActorRef.noSender) =
     publish(TaskExecutionFailed(task, error, trigger))
+
+  def kylinJobTriggered(job: Job, task: TaskMessage, trigger: ActorRef = ActorRef.noSender) =
+    publish(KylinJobTriggered(job, task, trigger))
+
+  def kylinJobStatusUpdated(job: Job, trigger: ActorRef = ActorRef.noSender) =
+    publish(KylinJobStatusUpdated(job, trigger))
 }

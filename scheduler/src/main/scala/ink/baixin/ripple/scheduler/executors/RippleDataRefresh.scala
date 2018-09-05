@@ -1,6 +1,6 @@
-package ink.baixin.ripple.scheduler.executors
+package ink.baixin.ripple.scheduler
+package executors
 
-import ink.baixin.ripple.scheduler.TaskMessage
 import ink.baixin.ripple.scheduler.services.SparkService
 import org.apache.hadoop.yarn.api.records.YarnApplicationState
 

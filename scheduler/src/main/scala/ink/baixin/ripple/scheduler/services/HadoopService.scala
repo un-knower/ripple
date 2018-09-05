@@ -2,6 +2,7 @@ package ink.baixin.ripple.scheduler.services
 
 import java.io.{InputStream, OutputStream}
 import java.net.URI
+
 import com.typesafe.scalalogging.Logger
 import ink.baixin.ripple.scheduler.HadoopConfig
 import org.apache.hadoop.conf.Configuration
@@ -10,7 +11,10 @@ import org.apache.hadoop.fs.{FileSystem, FileUtil, Path}
 import org.apache.hadoop.yarn.api.records._
 import org.apache.hadoop.yarn.client.api.YarnClient
 import org.apache.hadoop.yarn.conf.YarnConfiguration
+
 import scala.collection.JavaConverters._
+import scala.concurrent.duration.FiniteDuration
+import scala.util.Random
 
 object HadoopService {
   private val logger = Logger(this.getClass)
@@ -62,8 +66,8 @@ object HadoopService {
     def isTerminated = {
       val state = getAppState
       (state == YarnApplicationState.FINISHED
-        || YarnApplicationState.FAILED
-        || YarnApplicationState.KILLED)
+        || state == YarnApplicationState.FAILED
+        || state == YarnApplicationState.KILLED)
     }
 
     def execute(f: YarnAppContext => Unit): Option[YarnApplicationState] = {
@@ -130,6 +134,13 @@ object HadoopService {
       logger.info(s"service=hadoop event=submit_app type=$apptype name=$appname envs=$appenvs cmd=$command")
       logger.debug(s"service=hadoop event=print_resources resources=${localResources.map(ent => (ent._1, ent._2.getResource.toString))}")
       client.submitApplication(submissionContext)
+    }
+
+    def wait(duration: FiniteDuration) = {
+      val expire = System.nanoTime() + duration.toNanos
+      do {
+        Thread.sleep(4000 + Random.nextInt(2000))
+      } while (!isTerminated && (System.nanoTime() < expire))
     }
   }
 

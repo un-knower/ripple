@@ -37,7 +37,9 @@ object SparkService {
 
   private def executeSparkApp(appJar: String, name: String, argm: Map[String, String]): Option[YarnApplicationState] = {
     HadoopService.launchYarnApp { context =>
+      // staging directory used while submitting applications
       val stagingDir = context.stagingDirectory
+      // get local execute environment
       val envs = Map(
         "HADOOP_USER_NAME" -> "hadoop",
         "SPARK_USER" -> "hadoop",
@@ -46,8 +48,10 @@ object SparkService {
         Environment.CLASSPATH.name -> getClassPath
       )
       val args = argm.toSeq.flatMap(arg => Seq(s"--${arg._1}", arg._2))
+      // get execute command
       val command = getCommand(name, args, stagingDir)
       val amResource = Resource.newInstance(AM_MEMROY + Math.max(AM_MEMROY / 4, 128), AM_CORES)
+      // get local resource from hdfs
       val localResources = getLocalResource(appJar, stagingDir)
 
       context.submitApp(
@@ -99,7 +103,7 @@ object SparkService {
     escaped.append("'").toString()
   }
 
-  def getCommand(name: String, arguments: Seq[String], stagingDir: Path) = {
+  def getCommand(name: String, arguments: Seq[String], stagingDir: Path): Seq[String] = {
     val appJarTarget = new Path(stagingDir, SPARK_APP_JAR)
     val javaCmd = Seq(
       s"${Environment.JAVA_HOME.$$()}/bin/java",
@@ -111,7 +115,7 @@ object SparkService {
       "-XX:+CMSClassUnloadingEnabled",
       "-XX:CMSInitiatingOccupancyFraction=70",
       "-XX:OnOutOfMemoryError='kill -9 %p'",
-      s"-Xmx$AM_MEMROYm",
+      s"-Xmx$AM_MEMROY",
       s"-Djava.io.tmpdir=${Environment.PWD.$$()}/tmp",
       s"-Dspark.yarn.app.container.log.dir=${ApplicationConstants.LOG_DIR_EXPANSION_VAR}"
     )
@@ -126,7 +130,7 @@ object SparkService {
       s"1> ${ApplicationConstants.LOG_DIR_EXPANSION_VAR}/stdout",
       s"2> ${ApplicationConstants.LOG_DIR_EXPANSION_VAR}/stderr"
     )
-    javaCmd + javaOpts + cmdArgs + appArgs + logArgs
+    javaCmd ++ javaOpts ++ cmdArgs ++ appArgs ++ logArgs
   }
 
   def getLocalResource(appJar: String, stagingDir: Path): Map[String, LocalResource] = {
@@ -170,9 +174,10 @@ object SparkService {
       prop
     }
 
+    // copy spark conf file from spark directory to yarn directory
     HadoopService.writeHDFSFile(confTarget) { out =>
       val zipOut = new ZipOutputStream(out)
-      val buffer = Array[Byte](1 << 10) // set buffer size to 1 mb
+      val buffer = new Array[Byte](1 << 10) // set buffer size to 1 mb
 
       HadoopService.readHDFSFile(new Path("hdfs:///apps/spark/spark-conf.zip")) { in =>
         val zipIn = new ZipInputStream(in)

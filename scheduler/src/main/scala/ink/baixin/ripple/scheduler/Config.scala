@@ -45,6 +45,29 @@ object TaskConfig extends BaseConfig("task") {
 
   val kylinCubes = raw.getStringList("kylin_cubes").asScala
   val kylinProject = raw.getString("kylin_project")
+
+  def getHiveTables(table: String): Seq[String] = {
+    val tablePath = s"hive_tables.$table"
+    if (raw.hasPath(tablePath)) {
+      raw.getStringList(tablePath).asScala
+    } else {
+      Seq(table)
+    }
+  }
+
+  def getHiveAuxJars(table: String) = {
+    if (raw.hasPath(s"hive_aux_jars.$table")) {
+      raw.getString(s"hive_aux_jars.$table").split(",").map(_.trim).toSet
+    } else {
+      Set()
+    }
+  }
+
+  def getHiveTableLocation(table: String) = {
+    val locationPath = s"hive_table_locations.$table"
+    if (raw.hasPath(locationPath)) Some(raw.getString(locationPath))
+    else None
+  }
 }
 
 object HadoopConfig extends BaseConfig("hadoop") {
@@ -59,4 +82,18 @@ object SparkConfig extends BaseConfig("spark") {
   val historyDir = raw.getString("history_dir")
   val appJar = raw.getString("app_jar")
   val sparkLibsArchive = raw.getString("spark_libs_archive")
+}
+
+object HiveConfig extends BaseConfig("hive") {
+  val url = raw.getString("url")
+  val username = raw.getString("username")
+  val password = raw.getString("password")
+  val metastoreURIs = raw.getString("metastore_uris")
+}
+
+object KylinConfig extends BaseConfig("kylin") {
+  val baseUrl = raw.getString("base_url")
+  val username = raw.getString("username")
+  val password = raw.getString("password")
+  val targetGroupArn = raw.getString("target_group_arn")
 }
